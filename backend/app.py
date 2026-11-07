@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 import bleach
-from fastapi import FastAPI, Depends, HTTPException, Request, Response, UploadFile, File, Query
+from fastapi import FastAPI, Depends, HTTPException, Request, Response, UploadFile, File, Query, BackgroundTasks
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -222,15 +222,30 @@ def get_site(db: Session = Depends(db_session)):
 @app.put("/api/site")
 def update_site(payload: dict, user: User = Depends(current_user), db: Session = Depends(db_session)):
     require(user, POWER)
-    allowed = {"site_name", "tagline", "hero_title", "hero_description", "contact_email", "contact_phone", "contact_address", "footer_text", "menus"}
+    allowed = {"site_name", "tagline", "hero_title", "hero_description", "hero_image_1", "hero_image_2", "hero_slide_2_title", "hero_slide_2_description", "contact_email", "contact_phone", "contact_address", "footer_text", "menus"}
     for key, value in payload.items():
         if key not in allowed or not isinstance(value, str) or len(value) > 5000:
             raise HTTPException(422, "Field pengaturan tidak valid")
         if key == "menus":
             try:
                 menus = json.loads(value)
-                if not isinstance(menus, list) or any(not str(x.get("url", "")).startswith("/") for x in menus):
+                if not isinstance(menus, list) or len(menus) > 20:
                     raise ValueError("menu")
+                for item in menus:
+                    if not isinstance(item, dict) or not isinstance(item.get("title"), str):
+                        raise ValueError("menu")
+                    url = item.get("url")
+                    if not isinstance(url, str) or not url.startswith("/") or url.startswith("//"):
+                        raise ValueError("menu")
+                    children = item.get("children", [])
+                    if not isinstance(children, list) or len(children) > 20:
+                        raise ValueError("menu")
+                    for child in children:
+                        if not isinstance(child, dict) or not isinstance(child.get("title"), str):
+                            raise ValueError("menu")
+                        child_url = child.get("url")
+                        if not isinstance(child_url, str) or not child_url.startswith("/") or child_url.startswith("//"):
+                            raise ValueError("menu")
             except (ValueError, TypeError, AttributeError):
                 raise HTTPException(422, "Format navigasi harus berupa daftar URL internal")
         setting = db.get(Setting, key)
@@ -283,15 +298,15 @@ def sanitize_post(data: PostIn):
         raise HTTPException(422, "Tipe/status konten tidak valid")
     return {
         "type": data.type, "title": data.title.strip(), "excerpt": data.excerpt[:800],
-        "content": bleach.clean(data.content, tags=["p", "br", "h2", "h3", "h4", "b", "strong", "em", "i", "u", "a", "ul", "ol", "li", "blockquote", "figure", "figcaption", "img"],
-            attributes={"a": ["href", "title", "rel"], "img": ["src", "alt", "loading"], "figure": ["class"]},
+        "content": bleach.clean(data.content, tags=["p", "br", "h2", "h3", "h4", "b", "strong", "em", "i", "u", "a", "ul", "ol", "li", "blockquote", "figure", "figcaption", "img", "div", "span"],
+            attributes={"a": ["href", "title", "rel"], "img": ["src", "alt", "loading"], "figure": ["class"], "div": ["class"], "span": ["class"]},
             protocols=["https", "http"], strip=True),
         "image_url": data.image_url[:1024], "category": data.category[:100], "tags": data.tags[:300],
         "seo_title": data.seo_title[:220], "seo_description": data.seo_description[:400], "status": data.status,
     }
 
 @app.post("/api/posts")
-def create_post(data: PostIn, user: User = Depends(current_user), db: Session = Depends(db_session)):
+def create_post(data: PostIn, background_tasks: BackgroundTasks, user: User = Depends(current_user), db: Session = Depends(db_session)):
     require(user, EDITOR)
     attrs = sanitize_post(data)
     row = Post(**attrs, slug=unique_slug(db, data.slug or data.title), author_id=user.id,
@@ -300,14 +315,17 @@ def create_post(data: PostIn, user: User = Depends(current_user), db: Session = 
     db.flush()
     track(db, user, "create", "posts", row.id)
     db.commit()
+    if row.status == "published":
+        background_tasks.add_task(notify_indexnow, public_post_path(row))
     return ser(row, POST_KEYS)
 
 @app.put("/api/posts/{post_id}")
-def update_post(post_id: int, data: PostIn, user: User = Depends(current_user), db: Session = Depends(db_session)):
+def update_post(post_id: int, data: PostIn, background_tasks: BackgroundTasks, user: User = Depends(current_user), db: Session = Depends(db_session)):
     require(user, EDITOR)
     row = db.get(Post, post_id)
     if not row:
         raise HTTPException(404, "Artikel tidak ditemukan")
+    previous_path = public_post_path(row) if row.status == "published" else None
     for k, v in sanitize_post(data).items():
         setattr(row, k, v)
     if data.slug and slugify(data.slug) != row.slug:
@@ -316,17 +334,25 @@ def update_post(post_id: int, data: PostIn, user: User = Depends(current_user), 
         row.published_at = utcnow()
     track(db, user, "update", "posts", row.id)
     db.commit()
+    current_path = public_post_path(row) if row.status == "published" else None
+    if previous_path and previous_path != current_path:
+        background_tasks.add_task(notify_indexnow, previous_path)
+    if current_path:
+        background_tasks.add_task(notify_indexnow, current_path)
     return ser(row, POST_KEYS)
 
 @app.delete("/api/posts/{post_id}")
-def delete_post(post_id: int, user: User = Depends(current_user), db: Session = Depends(db_session)):
+def delete_post(post_id: int, background_tasks: BackgroundTasks, user: User = Depends(current_user), db: Session = Depends(db_session)):
     require(user, EDITOR)
     row = db.get(Post, post_id)
     if not row:
         raise HTTPException(404, "Artikel tidak ditemukan")
+    removed_path = public_post_path(row) if row.status == "published" else None
     db.delete(row)
     track(db, user, "delete", "posts", post_id)
     db.commit()
+    if removed_path:
+        background_tasks.add_task(notify_indexnow, removed_path)
     return {"ok": True}
 
 @app.post("/api/media")
@@ -588,40 +614,200 @@ def absolute_url(path: str) -> str:
         return path
     return BASE_URL + (path if path.startswith("/") else "/" + path)
 
+
+def public_post_path(post: Post) -> str:
+    if post.type == "page":
+        return "/halaman/" + post.slug
+    if "artikel" in (post.category or "").lower():
+        return "/artikel/" + post.slug
+    return "/berita/" + post.slug
+
+def notify_indexnow(path: str):
+    """Notify IndexNow participants after publishing, updating or removing public content."""
+    key = os.environ.get("BPKR_INDEXNOW_KEY", "").strip()
+    if not key:
+        return
+    from urllib.request import Request as UrlRequest, urlopen
+    import logging
+
+    url = absolute_url(path)
+    payload = json.dumps({"host": "bpkr.otomasi.app", "key": key,
+                          "keyLocation": BASE_URL + "/indexnow-key.txt",
+                          "urlList": [url]}).encode("utf-8")
+    req = UrlRequest("https://api.indexnow.org/indexnow", data=payload,
+                     headers={"Content-Type": "application/json; charset=utf-8"},
+                     method="POST")
+    try:
+        with urlopen(req, timeout=8) as response:
+            if response.status not in {200, 202}:
+                logging.warning("IndexNow response HTTP %s", response.status)
+    except Exception as exc:
+        logging.warning("IndexNow notification failed: %s", type(exc).__name__)
+
+
+@app.get("/indexnow-key.txt", response_class=PlainTextResponse, include_in_schema=False)
+def indexnow_key():
+    key = os.environ.get("BPKR_INDEXNOW_KEY", "").strip()
+    if not key:
+        raise HTTPException(404, "IndexNow belum dikonfigurasi")
+    return PlainTextResponse(key, headers={"Cache-Control": "public, max-age=3600"})
+
+
 @app.get("/robots.txt", response_class=PlainTextResponse)
 def robots():
     return "User-agent: *\nAllow: /\nDisallow: /dashboard\nDisallow: /login\nDisallow: /api/\nSitemap: " + BASE_URL + "/sitemap.xml\n"
 
 @app.get("/sitemap.xml")
 def sitemap(db: Session = Depends(db_session)):
-    posts = db.query(Post).filter_by(status="published").all()
-    paths = ["/"] + [("/berita/" if p.type == "news" else "/halaman/") + p.slug for p in posts]
-    xml = '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
-    for path in paths:
-        xml += "<url><loc>" + escape(BASE_URL + path) + "</loc></url>"
-    return Response(xml + "</urlset>", media_type="application/xml")
+    posts = db.query(Post).filter_by(status="published").order_by(Post.updated_at.desc()).all()
+    public_pages = ["/", "/berita", "/artikel", "/tentang", "/visi-misi",
+                    "/struktur", "/pimpinan", "/sejarah", "/pengembangan",
+                    "/program-studi", "/layanan", "/kontak"]
+    paths = [(item, None) for item in public_pages]
+    paths += [(public_post_path(p), p.updated_at or p.published_at or p.created_at)
+              for p in posts]
+    items = ['<?xml version="1.0" encoding="UTF-8"?>',
+             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    for path, lastmod in paths:
+        items.append("<url><loc>" + escape(BASE_URL + path) + "</loc>"
+                     + ("<lastmod>" + lastmod.date().isoformat() + "</lastmod>" if lastmod else "")
+                     + "</url>")
+    items.append("</urlset>")
+    return Response("".join(items), media_type="application/xml",
+                    headers={"Cache-Control": "public, max-age=300"})
+
+
+@app.get("/feed.xml", include_in_schema=False)
+def feed(db: Session = Depends(db_session)):
+    from email.utils import format_datetime
+    from datetime import timezone
+
+    posts = (db.query(Post).filter_by(type="news", status="published")
+             .order_by(Post.published_at.desc()).limit(30).all())
+    items = ['<?xml version="1.0" encoding="UTF-8"?>',
+             '<rss version="2.0"><channel>',
+             '<title>BPKR Kampus Rembang — Universitas Diponegoro</title>',
+             '<link>' + escape(BASE_URL) + '</link>',
+             '<description>Berita dan publikasi Badan Pengelola Kampus Rembang UNDIP</description>',
+             '<language>id-id</language>']
+    for post in posts:
+        link = BASE_URL + public_post_path(post)
+        date = post.published_at or post.created_at
+        if date.tzinfo is None:
+            date = date.replace(tzinfo=timezone.utc)
+        items += ["<item><title>" + escape(post.title) + "</title>",
+                  "<link>" + escape(link) + "</link>",
+                  "<guid isPermaLink=\"true\">" + escape(link) + "</guid>",
+                  "<description>" + escape(post.excerpt or post.title) + "</description>",
+                  "<pubDate>" + format_datetime(date) + "</pubDate></item>"]
+    items.append("</channel></rss>")
+    return Response("".join(items), media_type="application/rss+xml",
+                    headers={"Cache-Control": "public, max-age=300"})
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/images/undip-logo.png", status_code=301)
 
 def render_article(post: Post):
     title = escape(post.seo_title or post.title)
     desc = escape(post.seo_description or post.excerpt or post.title)
-    img = escape(absolute_url(post.image_url)) if post.image_url else ""
-    link = absolute_url(("/berita/" if post.type == "news" else "/halaman/") + post.slug)
+    img = escape(absolute_url(post.image_url or "/images/kampus-rembang.jpg"))
+    link = absolute_url(public_post_path(post))
     structured = json.dumps({"@context": "https://schema.org", "@type": "NewsArticle" if post.type == "news" else "WebPage",
                              "headline": post.title, "description": post.seo_description or post.excerpt,
                              "datePublished": (post.published_at or post.created_at).isoformat(),
                              "dateModified": (post.updated_at or post.created_at).isoformat(),
-                             "mainEntityOfPage": link, "image": [absolute_url(post.image_url)] if post.image_url else []},
+                             "mainEntityOfPage": link, "inLanguage": "id-ID",
+                             "publisher": {"@type": "Organization", "name": "Badan Pengelola Kampus Rembang - Universitas Diponegoro",
+                                           "url": BASE_URL, "logo": {"@type": "ImageObject", "url": BASE_URL + "/images/undip-logo.png"}},
+                             "image": [absolute_url(post.image_url or "/images/kampus-rembang.jpg")]},
                             ensure_ascii=False).replace("<", "\\u003c")
+    from urllib.parse import quote
+    share_link = quote(link, safe="")
+    share_title = quote(post.title, safe="")
+    share_nav = (
+        '<nav class="share-buttons" aria-label="Bagikan artikel">'
+        '<strong>Bagikan artikel:</strong>'
+        '<a target="_blank" rel="noopener noreferrer" href="https://wa.me/?text=' +
+        share_title + '%20' + share_link + '">WhatsApp</a>'
+        '<a target="_blank" rel="noopener noreferrer" href="https://www.facebook.com/sharer/sharer.php?u=' +
+        share_link + '">Facebook</a>'
+        '<a target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/sharing/share-offsite/?url=' +
+        share_link + '">LinkedIn</a>'
+        '<a target="_blank" rel="noopener noreferrer" href="https://twitter.com/intent/tweet?url=' +
+        share_link + '&text=' + share_title + '">X</a>'
+        '</nav>'
+    )
     body = post.content
     return HTMLResponse(f"""<!doctype html><html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title} | BPKR UNDIP</title><meta name="description" content="{desc}"><link rel="canonical" href="{escape(link)}">
 <meta property="og:type" content="article"><meta property="og:title" content="{title}"><meta property="og:description" content="{desc}">
 <meta property="og:url" content="{escape(link)}"><meta property="og:image" content="{img}">
-<meta name="twitter:card" content="summary_large_image"><script type="application/ld+json">{structured}</script>
-<style>body{{margin:0;background:#f7f9fd;color:#183657;font:16px/1.85 system-ui,Arial,sans-serif}}*{{box-sizing:border-box}}a{{color:#0a4e94;text-decoration:none}}header{{height:88px;background:white;padding:0 max(20px,5%);display:flex;align-items:center;justify-content:space-between;gap:20px;border-bottom:1px solid #e1e8f2;position:relative;z-index:2}}header a.brand{{display:flex;align-items:center;gap:13px;color:#07366b;line-height:1.25;font-size:16px}}header img{{width:45px;height:56px;object-fit:contain}}header b,header small{{display:block}}header small{{color:#5c7290;font-size:12px;font-weight:600}}header nav{{display:flex;gap:22px;font-size:13px;font-weight:800}}.article-banner{{height:260px;background:linear-gradient(90deg,#063569ed,#07366b7d),url('/images/kampus-rembang.jpg') center 45%/cover no-repeat;position:relative;border-bottom:6px solid #ffca27}}.article-banner span{{position:absolute;top:78px;left:max(20px,calc((100% - 1040px)/2));color:#ffca27;letter-spacing:2px;font-size:12px;font-weight:800}}main{{position:relative;max-width:960px;margin:-86px auto 50px;background:white;padding:clamp(24px,5vw,65px);border-radius:16px;box-shadow:0 13px 45px #0d35601a}}main>small{{color:#0b5699;font-weight:800;letter-spacing:1px;font-size:11px}}h1{{font-size:clamp(29px,4vw,48px);line-height:1.24;letter-spacing:-.04em;color:#092f60;margin:17px 0}}.meta{{color:#667b95;font-size:13px;border-bottom:1px solid #e1e9f3;padding-bottom:22px}}.hero{{width:100%;max-height:470px;object-fit:cover;border-radius:12px;margin:22px 0}}.article img{{max-width:100%;height:auto}}.article{{overflow-wrap:anywhere}}.article h2,.article h3{{color:#07366b}}main>p:last-child{{margin-top:32px;border-top:1px solid #e0e8f2;padding-top:19px;font-weight:800}}footer{{text-align:center;background:#07366b;padding:25px;color:#d8e7f7;font-size:12px}}@media(max-width:700px){{header{{height:74px;padding:0 16px}}header a.brand{{font-size:12px}}header img{{width:38px;height:46px}}header nav{{gap:12px;font-size:11px}}.article-banner{{height:180px}}.article-banner span{{left:20px;top:45px}}main{{margin:-45px 13px 25px}}}}</style>
+<meta property="og:site_name" content="BPKR Kampus Rembang UNDIP"><meta property="og:locale" content="id_ID">
+<meta property="og:image:alt" content="{escape(post.title)}">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{title}">
+<meta name="twitter:description" content="{desc}"><meta name="twitter:image" content="{img}">
+<link rel="alternate" type="application/rss+xml" title="Berita BPKR" href="/feed.xml">
+<script type="application/ld+json">{structured}</script>
+<style>body{{margin:0;background:#f7f9fd;color:#183657;font:16px/1.85 system-ui,Arial,sans-serif}}*{{box-sizing:border-box}}a{{color:#0a4e94;text-decoration:none}}header{{height:88px;background:white;padding:0 max(20px,5%);display:flex;align-items:center;justify-content:space-between;gap:20px;border-bottom:1px solid #e1e8f2;position:relative;z-index:2}}header a.brand{{display:flex;align-items:center;gap:13px;color:#07366b;line-height:1.25;font-size:16px}}header img{{width:45px;height:56px;object-fit:contain}}header b,header small{{display:block}}header small{{color:#5c7290;font-size:12px;font-weight:600}}header nav{{display:flex;gap:22px;font-size:13px;font-weight:800}}.article-banner{{height:260px;background:linear-gradient(90deg,#063569ed,#07366b7d),url('/images/kampus-rembang.jpg') center 45%/cover no-repeat;position:relative;border-bottom:6px solid #ffca27}}.article-banner span{{position:absolute;top:78px;left:max(20px,calc((100% - 1040px)/2));color:#ffca27;letter-spacing:2px;font-size:12px;font-weight:800}}main{{position:relative;max-width:960px;margin:-86px auto 50px;background:white;padding:clamp(24px,5vw,65px);border-radius:16px;box-shadow:0 13px 45px #0d35601a}}main>small{{color:#0b5699;font-weight:800;letter-spacing:1px;font-size:11px}}h1{{font-size:clamp(29px,4vw,48px);line-height:1.24;letter-spacing:-.04em;color:#092f60;margin:17px 0}}.meta{{color:#667b95;font-size:13px;border-bottom:1px solid #e1e9f3;padding-bottom:22px}}.hero{{width:100%;max-height:470px;object-fit:cover;border-radius:12px;margin:22px 0}}.article img{{max-width:100%;height:auto}}.article{{overflow-wrap:anywhere}}.article h2,.article h3{{color:#07366b}}main>p:last-child{{margin-top:32px;border-top:1px solid #e0e8f2;padding-top:19px;font-weight:800}}footer{{text-align:center;background:#07366b;padding:25px;color:#d8e7f7;font-size:12px}}@media(max-width:700px){{header{{height:74px;padding:0 16px}}header a.brand{{font-size:12px}}header img{{width:38px;height:46px}}header nav{{gap:12px;font-size:11px}}.article-banner{{height:180px}}.article-banner span{{left:20px;top:45px}}main{{margin:-45px 13px 25px}}}}.share-buttons{{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:28px 0;padding:20px 0;border-top:1px solid #e0e8f2;border-bottom:1px solid #e0e8f2}}
+.share-buttons strong{{font-size:14px;margin-right:8px}}
+.share-buttons a{{display:inline-block;border:1px solid #b6c7dd;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700}}
+.share-buttons a:hover{{background:#eef4fc}}</style>
 </head><body><header><a class="brand" href="/"><img src="/images/undip-logo.png" alt="Lambang Universitas Diponegoro"><span><b>UNIVERSITAS DIPONEGORO</b><small>Kampus Rembang · BPKR</small></span></a><nav><a href="/">Beranda</a><a href="/berita">Berita</a></nav></header><div class="article-banner"><span>BPKR · PUBLIKASI KAMPUS REMBANG</span></div><main><small>{escape(post.category)}</small><h1>{escape(post.title)}</h1><p class="meta">{(post.published_at or post.created_at).strftime("%d %B %Y")}</p>
 {('<img class="hero" alt="' + escape(post.title) + '" src="' + escape(post.image_url) + '">') if post.image_url else ''}
-<article class="article">{body}</article><p><a href="/berita">← Kembali ke berita</a></p></main><footer>Badan Pengelola Kampus Rembang · Universitas Diponegoro</footer></body></html>""")
+<article class="article">{body}</article>{share_nav}<p><a href="/berita">← Kembali ke berita</a></p></main><footer>Badan Pengelola Kampus Rembang · Universitas Diponegoro</footer></body></html>""")
+
+
+def render_reflective_article(post: Post):
+    from urllib.parse import quote
+
+    link = absolute_url("/artikel/" + post.slug)
+    title = escape(post.seo_title or post.title)
+    desc = escape(post.seo_description or post.excerpt or post.title)
+    cover = escape(absolute_url(post.image_url or "/images/kampus-rembang-2.jpg"))
+    date = post.published_at or post.created_at
+    months = ("Januari", "Februari", "Maret", "April", "Mei", "Juni",
+              "Juli", "Agustus", "September", "Oktober", "November", "Desember")
+    display_date = f"{date.day} {months[date.month - 1]} {date.year}"
+    share_link = quote(link, safe="")
+    share_title = quote(post.title + " " + link, safe="")
+    structured = json.dumps({
+        "@context": "https://schema.org", "@type": "Article",
+        "headline": post.title, "description": post.seo_description or post.excerpt,
+        "datePublished": date.isoformat(),
+        "dateModified": (post.updated_at or date).isoformat(),
+        "mainEntityOfPage": link, "inLanguage": "id-ID",
+        "publisher": {"@type": "Organization", "name": "Badan Pengelola Kampus Rembang - Universitas Diponegoro",
+                      "url": BASE_URL, "logo": {"@type": "ImageObject", "url": BASE_URL + "/images/undip-logo.png"}},
+        "image": [absolute_url(post.image_url or "/images/kampus-rembang-2.jpg")]
+    }, ensure_ascii=False).replace("<", "\\u003c")
+    return HTMLResponse(f"""<!doctype html>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title} | BPKR UNDIP</title><meta name="description" content="{desc}"><link rel="canonical" href="{escape(link)}">
+<meta property="og:type" content="article"><meta property="og:locale" content="id_ID"><meta property="og:title" content="{title}">
+<meta property="og:description" content="{desc}"><meta property="og:image" content="{cover}"><meta property="og:url" content="{escape(link)}">
+<meta name="twitter:card" content="summary_large_image"><link rel="icon" href="/images/undip-logo.png">
+<script type="application/ld+json">{structured}</script><link rel="stylesheet" href="/design/reflective-article.css"></head>
+<body><header><a class="header-brand" href="/"><img src="/images/undip-logo.png" alt="Logo UNDIP"><span>UNIVERSITAS<br>DIPONEGORO</span><span class="divider"></span><span>Kampus<br><small>Rembang</small></span></a>
+<nav><a href="/">Beranda</a><a href="/tentang">Tentang BPKR</a><a class="active" href="/artikel">Artikel</a><a href="/berita">Berita</a><a href="/kontak">Kontak</a></nav></header>
+<section class="cover"><div class="cover-inner"><span class="cover-kicker">ARTIKEL REFLEKTIF</span><h1>{escape(post.title)}</h1><span class="cover-rule"></span></div></section>
+<div class="meta-wrap"><div class="meta"><span>▦ &nbsp; {display_date}</span><span>◇ &nbsp; Artikel Reflektif</span><span>▤ &nbsp; Badan Pengelola Kampus Rembang (BPKR)</span>
+<div class="shares"><strong>Bagikan:</strong><a href="https://www.linkedin.com/sharing/share-offsite/?url={share_link}" target="_blank" rel="noopener noreferrer">LinkedIn</a><a href="https://api.whatsapp.com/send?text={share_title}" target="_blank" rel="noopener noreferrer">WhatsApp</a><a href="https://www.facebook.com/sharer/sharer.php?u={share_link}" target="_blank" rel="noopener noreferrer">Facebook</a></div></div></div>
+<div class="page-layout"><aside><div class="leader-profile"><img src="/images/prof-budiyono.jpg" alt="Foto Prof. Dr. Ir. Budiyono, M.Si." loading="eager">
+<div class="leader-caption"><strong>Prof. Dr. Ir. Budiyono, M.Si.</strong><span>Kepala Badan Pengelola Kampus Rembang (BPKR)<br>Universitas Diponegoro</span></div></div>
+<div class="aside-vision"><div class="quote-mark">“</div><small>Visi BPKR</small><p>Mewujudkan Kampus Rembang UNDIP yang unggul dalam tata kelola, inovatif, dan berkelanjutan untuk menghadirkan dampak nyata bagi masyarakat.</p><span class="quote-rule"></span></div></aside>
+<main><article class="article">{post.content}</article><a class="back-link" href="/artikel">← Kembali ke daftar artikel</a></main></div>
+<footer>Badan Pengelola Kampus Rembang · Universitas Diponegoro<br>Jalan Sawah, Desa Turus Gede, Kecamatan Rembang, Kabupaten Rembang, Jawa Tengah 59219</footer></body></html>""")
+
+
+@app.get("/artikel/{slug}", response_class=HTMLResponse)
+def reflective_article(slug: str, db: Session = Depends(db_session)):
+    post = db.query(Post).filter_by(slug=slug, type="news", status="published").first()
+    if not post or "artikel" not in post.category.lower():
+        raise HTTPException(404, "Artikel tidak ditemukan")
+    return render_reflective_article(post)
 
 @app.get("/berita/{slug}", response_class=HTMLResponse)
 def article(slug: str, db: Session = Depends(db_session)):
@@ -638,6 +824,8 @@ def page(slug: str, db: Session = Depends(db_session)):
     return render_article(post)
 
 app.mount("/media", StaticFiles(directory=str(UPLOADS)), name="media")
+if (STATIC / "design").exists():
+    app.mount("/design", StaticFiles(directory=str(STATIC / "design")), name="design")
 if (STATIC / "images").exists():
     app.mount("/images", StaticFiles(directory=str(STATIC / "images")), name="images")
 if (STATIC / "assets").exists():
@@ -655,7 +843,7 @@ def llms_txt():
 
 @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
 def spa(path: str, request: Request, db: Session = Depends(db_session)):
-    if path.startswith(("api/", "media/", "assets/", "images/")):
+    if path.startswith(("api/", "media/", "assets/", "images/", "design/")):
         raise HTTPException(404, "Rute tidak tersedia")
     index = STATIC / "index.html"
     if not index.exists():
@@ -663,10 +851,19 @@ def spa(path: str, request: Request, db: Session = Depends(db_session)):
     if request.method == "HEAD":
         return Response(status_code=200, media_type="text/html")
     html = index.read_text(encoding="utf-8")
-    if path in {"", "berita", "tentang", "layanan", "kontak"}:
+    if path in {"", "berita", "artikel", "tentang", "visi-misi", "struktur",
+                "pimpinan", "sejarah", "pengembangan", "program-studi",
+                "layanan", "kontak"}:
         headings = {
             "": ("BPKR Kampus Rembang UNDIP | Berita, Layanan dan Kolaborasi", "Portal informasi, berita, layanan, dan kolaborasi Badan Pengelola Kampus Rembang Universitas Diponegoro."),
             "berita": ("Berita BPKR Kampus Rembang | UNDIP", "Berita dan informasi resmi terbaru seputar kegiatan, layanan, dan perkembangan Kampus Rembang UNDIP."),
+            "artikel": ("Artikel BPKR Kampus Rembang | UNDIP", "Artikel dan wawasan tentang tata kelola, pendidikan, inovasi, dan pengembangan Kampus Rembang UNDIP."),
+            "visi-misi": ("Visi dan Misi BPKR | Kampus Rembang UNDIP", "Visi, misi, tata kelola dan arah pengembangan Badan Pengelola Kampus Rembang UNDIP."),
+            "struktur": ("Struktur Organisasi BPKR | UNDIP", "Informasi organisasi dan tata kelola Badan Pengelola Kampus Rembang Universitas Diponegoro."),
+            "pimpinan": ("Pimpinan BPKR Kampus Rembang | UNDIP", "Profil pimpinan dan pengelola Kampus Rembang Universitas Diponegoro."),
+            "sejarah": ("Sejarah Kampus Rembang | Universitas Diponegoro", "Sejarah dan perkembangan Kampus Rembang Universitas Diponegoro."),
+            "pengembangan": ("Arah Pengembangan Kampus Rembang | UNDIP", "Pengembangan tata kelola digital, akademik, kemitraan dan keberlanjutan Kampus Rembang."),
+            "program-studi": ("Program Studi Kampus Rembang | UNDIP", "Informasi program studi dan pendidikan tinggi di Kampus Rembang Universitas Diponegoro."),
             "tentang": ("Tentang BPKR | Kampus Rembang UNDIP", "Kenali peran dan layanan Badan Pengelola Kampus Rembang Universitas Diponegoro."),
             "layanan": ("Layanan BPKR | Akademik, Fasilitas dan Kemitraan", "Informasi layanan administrasi, akademik, fasilitas, laboratorium, dan kemitraan BPKR UNDIP."),
             "kontak": ("Hubungi BPKR Kampus Rembang", "Informasi alamat dan kontak Badan Pengelola Kampus Rembang Universitas Diponegoro."),
@@ -677,17 +874,79 @@ def spa(path: str, request: Request, db: Session = Depends(db_session)):
         html = html.replace('<meta name="description" content="Portal berita, layanan, dan kolaborasi Badan Pengelola Kampus Rembang Universitas Diponegoro.">',
                             '<meta name="description" content="' + escape(desc) + '">')
         html = html.replace('href="https://bpkr.otomasi.app/"', 'href="' + escape(canonical) + '"')
-        html = html.replace("</head>", '<meta property="og:title" content="' + escape(title) + '"><meta property="og:description" content="' +
-                            escape(desc) + '"><meta property="og:url" content="' + escape(canonical) + '"></head>')
+        image_url = BASE_URL + "/images/kampus-rembang.jpg"
+        page_type = "CollectionPage" if path in {"berita", "artikel"} else "WebPage"
+        website_schema = {
+            "@context": "https://schema.org",
+            "@graph": [
+                {"@type": "Organization", "@id": BASE_URL + "/#organization",
+                 "name": "Badan Pengelola Kampus Rembang - Universitas Diponegoro",
+                 "alternateName": "BPKR UNDIP", "url": BASE_URL,
+                 "logo": BASE_URL + "/images/undip-logo.png",
+                 "parentOrganization": {"@type": "CollegeOrUniversity",
+                                        "name": "Universitas Diponegoro",
+                                        "url": "https://undip.ac.id/"}},
+                {"@type": "WebSite", "@id": BASE_URL + "/#website",
+                 "name": "BPKR Kampus Rembang UNDIP", "url": BASE_URL,
+                 "inLanguage": "id-ID", "publisher": {"@id": BASE_URL + "/#organization"}},
+                {"@type": page_type, "@id": canonical + "#webpage",
+                 "name": title, "description": desc, "url": canonical,
+                 "inLanguage": "id-ID", "isPartOf": {"@id": BASE_URL + "/#website"}}
+            ]
+        }
+        schema_json = json.dumps(website_schema, ensure_ascii=False).replace("<", r"\u003c")
+        social = ('<meta property="og:type" content="website">'
+                  '<meta property="og:site_name" content="BPKR Kampus Rembang UNDIP">'
+                  '<meta property="og:locale" content="id_ID">'
+                  '<meta property="og:title" content="' + escape(title) + '">'
+                  '<meta property="og:description" content="' + escape(desc) + '">'
+                  '<meta property="og:url" content="' + escape(canonical) + '">'
+                  '<meta property="og:image" content="' + escape(image_url) + '">'
+                  '<meta property="og:image:alt" content="Kampus Rembang Universitas Diponegoro">'
+                  '<meta name="twitter:card" content="summary_large_image">'
+                  '<meta name="twitter:title" content="' + escape(title) + '">'
+                  '<meta name="twitter:description" content="' + escape(desc) + '">'
+                  '<meta name="twitter:image" content="' + escape(image_url) + '">'
+                  '<link rel="alternate" type="application/rss+xml" title="Berita BPKR" href="/feed.xml">'
+                  '<script type="application/ld+json">' + schema_json + '</script>')
+        html = html.replace("</head>", social + "</head>")
         title_html = '<h1>' + escape(title) + '</h1>'
+        nav_html = ('<nav aria-label="Navigasi publik">'
+                    '<a href="/">Beranda</a> | <a href="/berita">Berita</a> | '
+                    '<a href="/artikel">Artikel</a> | <a href="/tentang">Tentang BPKR</a> | '
+                    '<a href="/visi-misi">Visi dan Misi</a> | <a href="/struktur">Struktur</a> | '
+                    '<a href="/pimpinan">Pimpinan</a> | <a href="/pengembangan">Pengembangan</a> | '
+                    '<a href="/sejarah">Sejarah</a> | <a href="/program-studi">Program Studi</a> | '
+                    '<a href="/layanan">Layanan</a> | <a href="/kontak">Kontak</a></nav>')
         links = ""
-        if path in {"", "berita"}:
-            stories = db.query(Post).filter_by(type="news", status="published").order_by(Post.published_at.desc()).limit(24).all()
+        if path in {"", "berita", "artikel"}:
+            stories_query = db.query(Post).filter_by(type="news", status="published")
+            if path == "artikel":
+                stories_query = stories_query.filter(Post.category.ilike("%artikel%"))
+            elif path == "berita":
+                stories_query = stories_query.filter(~Post.category.ilike("%artikel%"))
+            stories = stories_query.order_by(Post.published_at.desc()).limit(24).all()
             links = "<h2>Berita terbaru</h2><ul>" + "".join(
-                '<li><a href="/berita/' + escape(p.slug) + '">' + escape(p.title) + '</a><p>' +
+                '<li><a href="' + escape(public_post_path(p)) + '">' + escape(p.title) + '</a><p>' +
                 escape(p.excerpt or "") + '</p></li>' for p in stories
             ) + "</ul>"
-        html = html.replace('<div id="root"></div>', '<div id="root"><main aria-label="Informasi BPKR">' + title_html + links + '</main></div>')
+        elif path == "tentang":
+            links = ("<h2>Peran BPKR</h2><p>BPKR mendukung pengelolaan Kampus Rembang "
+                     "Universitas Diponegoro melalui layanan akademik, administrasi, fasilitas, "
+                     "laboratorium, serta kerja sama dengan mitra.</p>")
+        elif path == "layanan":
+            links = ("<h2>Layanan kampus</h2><ul><li>Akademik</li>"
+                     "<li>Sarana dan prasarana</li><li>Laboratorium</li>"
+                     "<li>Administrasi</li><li>Keuangan</li><li>Kerja sama</li></ul>")
+        elif path == "kontak":
+            links = ("<h2>Alamat</h2><p>Kampus Rembang, Universitas Diponegoro</p>")
+        html = html.replace('<div id="root"></div>',
+                            '<div id="root"><main aria-label="Informasi BPKR">' +
+                            nav_html + title_html + '<p>' + escape(desc) + '</p>' +
+                            links + '</main></div>')
     elif path in {"dashboard", "login"} or path.startswith(("dashboard/", "login/")):
         html = html.replace("</head>", '<meta name="robots" content="noindex, nofollow"></head>')
+        return HTMLResponse(html, headers={"Cache-Control": "private, no-store", "X-Robots-Tag": "noindex, nofollow"})
+    else:
+        raise HTTPException(404, "Halaman tidak ditemukan")
     return HTMLResponse(html, headers={"Cache-Control": "no-cache"})

@@ -7,12 +7,16 @@ DEFAULT_SETTINGS = {
     "site_name": "BPKR | Kampus Rembang UNDIP",
     "tagline": "Bersama Membangun Kampus Rembang yang Unggul dan Berdampak",
     "hero_title": "Kampus Rembang",
+    "hero_image_1": "/images/kampus-rembang.jpg",
+    "hero_image_2": "/images/kampus-rembang-2.jpg",
+    "hero_slide_2_title": "Bertumbuh, Berinovasi, Berdampak",
+    "hero_slide_2_description": "Membangun ekosistem pendidikan tinggi yang adaptif, berbasis teknologi digital, dan berorientasi pada pelayanan serta pembangunan daerah.",
     "hero_description": "Kampus pengembangan UNDIP di pesisir utara Jawa yang mencetak talenta unggul, adaptif, dan berdampak bagi masyarakat.",
-    "contact_email": "",
+    "contact_email": "bpkr@live.undip.ac.id",
     "contact_phone": "",
-    "contact_address": "Kampus Rembang, Universitas Diponegoro",
+    "contact_address": "Jalan Sawah, Desa Turus Gede, Kecamatan Rembang, Kabupaten Rembang, Jawa Tengah 59219, Indonesia.",
     "footer_text": "BPKR · Universitas Diponegoro · Kampus Rembang",
-    "menus": '[{"title":"Beranda","url":"/"},{"title":"Tentang Kami","url":"/tentang"},{"title":"Layanan","url":"/layanan"},{"title":"Berita","url":"/berita"},{"title":"Kontak","url":"/kontak"}]'
+    "menus": '[{"title":"Beranda","url":"/"},{"title":"Tentang BPKR","url":"/tentang","children":[{"title":"Tentang BPKR","url":"/tentang"},{"title":"Visi & Misi","url":"/visi-misi"},{"title":"Struktur Organisasi","url":"/struktur"},{"title":"Pimpinan & Pengelola","url":"/pimpinan"}]},{"title":"Pengembangan","url":"/pengembangan","children":[{"title":"Arah Pengembangan","url":"/pengembangan"},{"title":"Sejarah Kampus","url":"/sejarah"},{"title":"Program Studi","url":"/program-studi"}]},{"title":"Artikel","url":"/artikel"},{"title":"Berita","url":"/berita"},{"title":"Kontak","url":"/kontak"}]'
 }
 
 DEFAULT_POSTS = [
@@ -58,6 +62,42 @@ DEFAULT_POSTS = [
         "seo_description": "Panduan modul rapat dan surat BPKR: olah notula, keputusan, PIC, tenggat, monitoring tugas, dan penyusunan surat untuk review."
     }
 ]
+
+DEFAULT_POSTS.append({
+    "title": "Membangun Kampus Rembang UNDIP: Dari Amanah, Idealisme, Menuju Kampus yang Berdampak",
+    "slug": "membangun-kampus-rembang-undip",
+    "category": "Artikel Reflektif",
+    "excerpt": "Refleksi pengembangan Kampus Rembang UNDIP melalui tata kelola modern, transformasi digital, pendidikan berkualitas, dan kemitraan yang berdampak.",
+    "image_url": "/images/kampus-rembang-2.jpg",
+    "tags": "BPKR, Kampus Rembang, UNDIP, Pengembangan, Artikel Reflektif, Prof. Budiyono",
+    "seo_description": "Gagasan dan arah pengembangan Kampus Rembang UNDIP untuk tata kelola modern, digital governance, pendidikan, inovasi, dan keberlanjutan.",
+    "content": """<p><strong>Kampus Rembang Universitas Diponegoro</strong> merupakan bagian dari komitmen UNDIP dalam memperluas akses pendidikan tinggi berkualitas sekaligus meningkatkan kontribusi perguruan tinggi bagi pembangunan daerah dan masyarakat.</p>
+<p>Penguatan pengelolaan melalui Badan Pengelola Kampus Rembang (BPKR) pada November 2026 menjadi langkah penting untuk menghadirkan kampus yang dikelola secara profesional, efektif, efisien, akuntabel, dan berorientasi pada manfaat nyata.</p>
+<h2>Arah dan Visi Pengembangan</h2>
+<p>Visi BPKR adalah <strong>“Mewujudkan Kampus Rembang UNDIP yang unggul dalam tata kelola, inovatif, dan berkelanjutan untuk menghadirkan dampak nyata bagi masyarakat.”</strong></p>
+<p>Sinergi bidang administrasi publik, informatika, dan teknologi digital diarahkan untuk memperkuat ekosistem <strong>Digital Governance and Public Innovation</strong> yang mendukung layanan publik, tata kelola, dan pembangunan masyarakat.</p>
+<div class="article-pill-grid">
+<div><strong>Digital Governance</strong><span>Inovasi tata kelola dan pelayanan publik</span></div>
+<div><strong>Smart Campus</strong><span>Integrasi teknologi dan efisiensi layanan</span></div>
+<div><strong>Academic Excellence</strong><span>Lingkungan pendidikan yang berkualitas</span></div>
+<div><strong>Strategic Partnership</strong><span>Kolaborasi pemerintah, industri, dan masyarakat</span></div>
+<div><strong>Sustainability</strong><span>Pengelolaan kampus ramah lingkungan</span></div>
+</div>
+<h2>Strategi Pengelolaan</h2>
+<p>Pengembangan Kampus Rembang dilakukan secara terintegrasi dan kolaboratif melalui enam prioritas:</p>
+<div class="article-strategy-grid">
+<div><strong>Transformasi Digital</strong><span>Sistem informasi, integrasi data, dan pengembangan smart campus.</span></div>
+<div><strong>Pengelolaan Efektif</strong><span>Tata kelola profesional, transparan, akuntabel, dan berorientasi pada kinerja.</span></div>
+<div><strong>Penguatan Akademik</strong><span>Pendidikan berkualitas yang relevan dengan kebutuhan masa depan.</span></div>
+<div><strong>Pelayanan Prima</strong><span>Pelayanan akademik dan nonakademik yang responsif serta mudah diakses.</span></div>
+<div><strong>Kemitraan & Inovasi</strong><span>Kerja sama dengan pemerintah, dunia usaha, industri, dan masyarakat.</span></div>
+<div><strong>Kampus Berkelanjutan</strong><span>Fasilitas efisien, hemat energi, inklusif, dan ramah lingkungan.</span></div>
+</div>
+<h2>Menuju Kampus yang Lebih Bermakna</h2>
+<p>Pengembangan Kampus Rembang tidak berhenti pada pertumbuhan fasilitas fisik. Penguatan pendidikan, penelitian, inovasi, pengabdian kepada masyarakat, dan kerja sama menjadi bagian dari upaya menghasilkan solusi terapan untuk tantangan nyata di daerah.</p>
+<p>Dengan pengelolaan yang modern dan dukungan seluruh unsur Universitas Diponegoro, Kampus Rembang diharapkan terus bertumbuh sebagai lingkungan pendidikan tinggi yang unggul, adaptif, kolaboratif, dan memberikan manfaat luas bagi masyarakat.</p>
+<p><small>Sumber substansi: dokumen profil Badan Pengelola Kampus Rembang Universitas Diponegoro.</small></p>"""
+})
 
 def seed():
     init_db()

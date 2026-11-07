@@ -10,6 +10,7 @@ import {
   ExternalLink, Eye, Pencil, RotateCcw
 } from 'lucide-react';
 import './style.css';
+import PublicContentPage from './publicContent.jsx';
 
 const roleLabels = {
   pimpinan: 'Pimpinan', sekretaris: 'Sekretaris', keuangan: 'Keuangan',
@@ -78,6 +79,8 @@ function App() {
   const [passwords, setPasswords] = useState({old_password:'',new_password:''});
   const [menuOpen, setMenuOpen] = useState(false);
   const [heroSlide, setHeroSlide] = useState(0);
+  const [navDropdown, setNavDropdown] = useState(null);
+  const [publicSearchOpen, setPublicSearchOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState('');
   const [error, setError] = useState('');
@@ -99,14 +102,17 @@ function App() {
   const editorRef = useRef(null);
 
   function navigate(to) {
+    if (/^\/(artikel|berita|halaman)\/[^/]+$/.test(to)) { window.location.assign(to); return; }
     history.pushState({}, '', to);
     setPath(to);
     setMenuOpen(false);
+    setNavDropdown(null);
+    setPublicSearchOpen(false);
     window.scrollTo({top:0, behavior:'instant'});
   }
   useEffect(() => {
     if (path !== '/') return;
-    const interval = setInterval(() => setHeroSlide(current => (current + 1) % 3), 8000);
+    const interval = setInterval(() => setHeroSlide(current => (current + 1) % 2), 8000);
     return () => clearInterval(interval);
   }, [path]);
   useEffect(() => {
@@ -185,6 +191,15 @@ function App() {
       setEditPost(p=>({...p,image_url:result.url}));
     },'Gambar berhasil diunggah');
   }
+  async function uploadSiteImage(file, key) {
+    if (!file) return;
+    await action(async () => {
+      const body = new FormData();
+      body.append('file', file);
+      const result = await api('/media', {method:'POST', body});
+      setSite(previous => ({...previous, [key]:result.url}));
+    }, 'Foto berhasil diunggah. Klik Simpan Pengaturan untuk menerbitkan perubahan.');
+  }
   async function saveEntry() {
     await action(async()=>{
       const payload={...entry,module:section};
@@ -243,22 +258,29 @@ function App() {
   const isAdmin=['superadmin','admin'].includes(user?.role);
   const canMeet=['pimpinan','sekretaris','superadmin','admin'].includes(user?.role);
   const canLetters=['pimpinan','sekretaris','tendik','superadmin','admin'].includes(user?.role);
-  const menus=(()=>{try{return JSON.parse(site.menus||'[]')}catch{return []}})();
-  const showArticle = (post) => '/'+(post.type==='page'?'halaman':'berita')+'/'+post.slug;
+  const defaultMenus = [
+    {title:'Beranda',url:'/'},
+    {title:'Tentang BPKR',url:'/tentang',children:[{title:'Tentang BPKR',url:'/tentang'},{title:'Visi & Misi',url:'/visi-misi'},{title:'Struktur Organisasi',url:'/struktur'},{title:'Pimpinan & Pengelola',url:'/pimpinan'}]},
+    {title:'Pengembangan',url:'/pengembangan',children:[{title:'Arah Pengembangan',url:'/pengembangan'},{title:'Sejarah Kampus',url:'/sejarah'},{title:'Program Studi',url:'/program-studi'}]},
+    {title:'Artikel',url:'/artikel'},{title:'Berita',url:'/berita'},{title:'Kontak',url:'/kontak'}
+  ];
+  const menus=(()=>{try{const parsed=JSON.parse(site.menus||'[]');return Array.isArray(parsed)&&parsed.length?parsed:defaultMenus}catch{return defaultMenus}})();
+  const showArticle = (post) => '/'+(post.type==='page'?'halaman':post.category.toLowerCase().includes('artikel')?'artikel':'berita')+'/'+post.slug;
 
   function Navbar() {
     return <header className="site-header">
       <div className="header-inner">
-        <button className="brand" onClick={()=>navigate('/')} aria-label="Beranda Universitas Diponegoro Kampus Rembang">
+        <a className="brand" href="/" onClick={e=>{e.preventDefault();navigate('/')}} aria-label="Beranda Universitas Diponegoro Kampus Rembang">
           <img className="brand-logo" src="/images/undip-logo.png" alt="Lambang Universitas Diponegoro"/>
           <span className="brand-university">UNIVERSITAS<br/>DIPONEGORO</span>
           <span className="brand-separator"/>
           <span className="brand-campus">Kampus<br/><strong>Rembang</strong></span>
-        </button>
+        </a>
         <nav className={'nav-links '+(menuOpen?'opened':'')}>
-          {(menus.length?menus:[{title:'Beranda',url:'/'},{title:'Berita',url:'/berita'},{title:'Tentang',url:'/tentang'},{title:'Layanan',url:'/layanan'},{title:'Kontak',url:'/kontak'}]).map((m,i)=><button key={i} className={path===m.url?'active':''} onClick={()=>navigate(m.url)}>{m.title}</button>)}
+          {menus.map((m,i)=>Array.isArray(m.children)&&m.children.length?<div className="nav-group" key={i}><button className={path===m.url||m.children.some(x=>path===x.url)?'active':''} aria-expanded={navDropdown===m.title} onClick={()=>setNavDropdown(o=>o===m.title?null:m.title)}>{m.title}<ChevronDown size={15}/></button><div className={'nav-dropdown '+(navDropdown===m.title?'expanded':'')}>{m.children.map((child,j)=><a key={j} href={child.url} className={path===child.url?'active':''} onClick={e=>{e.preventDefault();navigate(child.url)}}>{child.title}</a>)}</div></div>:<a key={i} href={m.url} className={path===m.url?'active':''} onClick={e=>{e.preventDefault();navigate(m.url)}}>{m.title}</a>)}
         </nav>
         <div className="header-actions">
+          <div className="public-search-wrap"><button className="public-search-toggle" aria-label="Cari artikel dan berita" aria-expanded={publicSearchOpen} onClick={()=>setPublicSearchOpen(v=>!v)}><Search size={21}/></button>{publicSearchOpen&&<form className="public-search-popover" onSubmit={e=>{e.preventDefault();navigate('/berita')}}><Search size={18}/><input autoFocus value={search} onChange={e=>setSearch(e.target.value)} placeholder="Cari artikel atau berita..." aria-label="Kata kunci pencarian"/><button type="submit">Cari</button></form>}</div>
           <a className="undip-link" href="https://undip.ac.id/" target="_blank" rel="noopener noreferrer">UNDIP <ExternalLink size={15}/></a>
           <IconButton icon={user?LayoutDashboard:LogIn} kind="nav" onClick={()=>navigate(user?'/dashboard':'/login')}>{user?'Dashboard':'Portal BPKR'}</IconButton>
           <button className="menu-toggle" aria-label="Buka menu" onClick={()=>setMenuOpen(x=>!x)}>{menuOpen?<X/>:<Menu/>}</button>
@@ -269,8 +291,8 @@ function App() {
   function Footer() {
     return <footer className="footer-public"><div className="public-container">
       <div className="footer-grid"><div><div className="footer-brand"><img src="/images/undip-logo.png" alt="Logo UNDIP"/>BPKR<span className="accent-dot">.</span></div><p>{site.tagline||'Kolaborasi untuk Kampus Rembang'}</p><div className="footer-social"><Globe2 size={19}/> Universitas Diponegoro</div></div>
-      <div><h4>Jelajahi</h4><button onClick={()=>navigate('/')}>Beranda</button><button onClick={()=>navigate('/berita')}>Berita & Publikasi</button><button onClick={()=>navigate('/layanan')}>Layanan Terpadu</button></div>
-      <div><h4>Informasi</h4><button onClick={()=>navigate('/tentang')}>Tentang BPKR</button><button onClick={()=>navigate('/kontak')}>Hubungi Kami</button><button onClick={()=>navigate('/login')}>Login Sistem</button></div>
+      <div><h4>Jelajahi</h4><a href="/" onClick={e=>{e.preventDefault();navigate('/')}}>Beranda</a><a href="/berita" onClick={e=>{e.preventDefault();navigate('/berita')}}>Berita & Publikasi</a><a href="/layanan" onClick={e=>{e.preventDefault();navigate('/layanan')}}>Layanan Terpadu</a></div>
+      <div><h4>Informasi</h4><a href="/tentang" onClick={e=>{e.preventDefault();navigate('/tentang')}}>Tentang BPKR</a><a href="/kontak" onClick={e=>{e.preventDefault();navigate('/kontak')}}>Hubungi Kami</a><a href="/login" onClick={e=>{e.preventDefault();navigate('/login')}}>Login Sistem</a></div>
       <div><h4>Alamat & Kontak</h4><p><MapPin size={15}/> {site.contact_address||'Kampus Rembang, Universitas Diponegoro'}</p>{site.contact_email&&<p><Mail size={15}/> {site.contact_email}</p>}{site.contact_phone&&<p><Phone size={15}/> {site.contact_phone}</p>}</div></div>
       <div className="footer-bottom"><span>© {new Date().getFullYear()} {site.footer_text||'BPKR · Universitas Diponegoro'}</span><span>Built for collaboration & real impact</span></div>
     </div></footer>;
@@ -283,14 +305,13 @@ function App() {
   }
   function HomePage() {
     const heroSlides = [
-      {eyebrow:'BADAN PENGELOLA KAMPUS REMBANG',pretitle:'Universitas Diponegoro',title:site.hero_title||'Kampus Rembang',description:site.hero_description||'Kampus pengembangan UNDIP di pesisir utara Jawa yang mencetak talenta unggul, adaptif, dan berdampak bagi masyarakat.'},
-      {eyebrow:'LAYANAN KAMPUS TERPADU',pretitle:'Pengelolaan Kampus',title:'Melayani dengan Sepenuh Hati',description:'Akses informasi akademik, administrasi, fasilitas, dan berbagai layanan Kampus Rembang melalui satu portal.'},
-      {eyebrow:'RISET, INOVASI & KEMITRAAN',pretitle:'Bersama Kampus Rembang',title:'Berkolaborasi dan Berdampak',description:'Memperkuat sinergi pendidikan, industri, pemerintah, dan masyarakat untuk masa depan yang berkelanjutan.'}
+      {eyebrow:'BADAN PENGELOLA KAMPUS REMBANG',pretitle:'Universitas Diponegoro',title:site.hero_title||'Kampus Rembang',description:site.hero_description||'Kampus pengembangan UNDIP yang mengedepankan tata kelola profesional, inovasi, dan kontribusi nyata bagi masyarakat.',image:site.hero_image_1||'/images/kampus-rembang.jpg'},
+      {eyebrow:'PENGEMBANGAN KAMPUS REMBANG',pretitle:'Digital Governance & Public Innovation',title:site.hero_slide_2_title||'Bertumbuh, Berinovasi, Berdampak',description:site.hero_slide_2_description||'Membangun ekosistem pendidikan tinggi yang adaptif, berbasis teknologi digital, dan berorientasi pada pelayanan serta pembangunan daerah.',image:site.hero_image_2||'/images/kampus-rembang-2.jpg'}
     ];
     const currentHero = heroSlides[heroSlide];
     return <><main>
       <section className="hero" aria-label="Profil Kampus Rembang">
-        <div className="hero-photo" aria-hidden="true"/>
+        <div className="hero-photo" key={currentHero.image} style={{backgroundImage:'url("'+currentHero.image+'")'}} aria-hidden="true"/>
         <div className="public-container hero-grid">
           <div className="hero-content" key={heroSlide}>
             <span className="hero-rule"/>
@@ -302,13 +323,14 @@ function App() {
               <span><Handshake size={26}/> Kemitraan<br/>Berdampak</span>
               <span><Leaf size={26}/> Kampus<br/>Berkelanjutan</span>
             </div>
-            <div className="hero-cta"><IconButton kind="gold" icon={ArrowRight} onClick={()=>navigate('/tentang')}>Profil Kampus</IconButton><button className="hero-link" onClick={()=>navigate('/layanan')}>Layanan Kampus <ArrowRight size={18}/></button></div>
+            <div className="hero-cta"><IconButton kind="gold" icon={ArrowRight} onClick={()=>navigate(heroSlide===0?'/tentang':'/pengembangan')}>{heroSlide===0?'Profil Kampus':'Arah Pengembangan'}</IconButton><button className="hero-link" onClick={()=>navigate('/artikel')}>Artikel Kampus <ArrowRight size={18}/></button></div>
           </div>
         </div>
         <div className="hero-pagination" aria-label="Pilih slide utama">{heroSlides.map((slide,i)=><button key={slide.eyebrow} type="button" aria-label={'Tampilkan slide '+(i+1)} aria-pressed={heroSlide===i} className={heroSlide===i?'active':''} onClick={()=>setHeroSlide(i)}/>)}</div>
         <svg className="hero-wave" viewBox="0 0 1440 100" preserveAspectRatio="none" aria-hidden="true"><path d="M0 40 C180 2 325 72 520 78 S900 95 1110 74 S1300 45 1440 8 L1440 100 L0 100 Z" fill="#07366B" stroke="#FFCA27" strokeWidth="8"/></svg>
       </section>
       <section className="trust-strip"><div className="public-container trust-inner"><div><span className="trust-small">DIPONEGORO UNIVERSITY</span><b>Kampus Rembang</b></div><span className="trust-divider"/><div><span className="trust-small">PILAR LAYANAN</span><b>Akademik · Fasilitas · Kemitraan</b></div><span className="trust-divider"/><div><span className="trust-small">PRINSIP KERJA</span><b>Efektif dan Akuntabel</b></div></div></section>
+      <section className="homepage-editorial public-container"><div className="homepage-editorial-image"><img src="/images/prof-budiyono.jpg" alt="Foto Kepala BPKR Prof. Dr. Ir. Budiyono, M.Si." loading="lazy"/></div><div className="homepage-editorial-copy"><span>ARTIKEL REFLEKTIF · PIMPINAN BPKR</span><h2>Membangun Kampus Rembang UNDIP: Dari Amanah, Idealisme, Menuju Kampus yang Berdampak</h2><p>Menelusuri komitmen tata kelola modern, transformasi digital, penguatan akademik, dan kerja sama untuk menghadirkan manfaat nyata.</p><button onClick={()=>navigate('/artikel/membangun-kampus-rembang-undip')}>Baca Artikel <ArrowUpRight size={18}/></button></div></section>
       <section className="public-section public-container"><div className="section-heading"><div><div className="section-kicker">WHAT WE DO <span>✦</span></div><h2>Solusi terpadu untuk<br/><i>kemajuan bersama.</i></h2></div><p>Dari pengelolaan internal hingga kolaborasi eksternal, layanan kampus lebih mudah dijangkau dan dipantau.</p></div>
       <div className="service-grid">
         <button className="service-card service-a" onClick={()=>navigate('/layanan')}><div className="service-top"><span>01 / LAYANAN</span><ArrowUpRight/></div><span className="service-emoji"><BookOpen size={34}/></span><h3>Layanan Akademik</h3><p>Koordinasi kegiatan, informasi akademik, dan dukungan proses pembelajaran.</p></button>
@@ -316,7 +338,7 @@ function App() {
         <button className="service-card service-c" onClick={()=>navigate('/layanan')}><div className="service-top"><span>03 / KEMITRAAN</span><ArrowUpRight/></div><span className="service-emoji"><Handshake size={34}/></span><h3>Kolaborasi Strategis</h3><p>Menghubungkan civitas akademika, industri, pemerintah, dan masyarakat.</p></button>
       </div></section>
       <section className="news-section"><div className="public-container"><div className="section-heading"><div><div className="section-kicker">STORIES & UPDATES <span>✦</span></div><h2>Kabar terbaru dari <i>Rembang.</i></h2></div><button className="all-stories" onClick={()=>navigate('/berita')}>Semua berita <ArrowUpRight size={18}/></button></div>
-      {posts.length?<div className="stories-grid">{posts.slice(0,3).map((p,i)=><StoryCard key={p.id} post={p} featured={i===0}/>)}</div>:<Empty title="Berita akan segera hadir" subtitle="Publikasi resmi BPKR akan muncul setelah editor menerbitkan artikel melalui dashboard."/>}</div></section>
+      {posts.length?<div className="stories-grid">{posts.filter((p,i,all)=>all.findIndex(item=>item.title.toLowerCase()===p.title.toLowerCase())===i).slice(0,3).map((p,i)=><StoryCard key={p.id} post={p} featured={i===0}/>)}</div>:<Empty title="Berita akan segera hadir" subtitle="Publikasi resmi BPKR akan muncul setelah editor menerbitkan artikel melalui dashboard."/>}</div></section>
       <section className="cta-band"><div className="public-container cta-grid"><span className="cta-big-icon"><Handshake size={49}/></span><div><span>LET'S WORK TOGETHER</span><h2>Bangun dampak bersama<br/>Kampus Rembang.</h2></div><IconButton kind="dark" icon={ArrowUpRight} onClick={()=>navigate('/kontak')}>Hubungi Kami</IconButton></div></section>
     </main><Footer/></>;
   }
@@ -324,15 +346,15 @@ function App() {
     return <section className="page-banner"><div className="public-container page-banner-inner"><span className="hero-rule"/><span className="page-banner-kicker">{kicker}</span><h1>{title} <em>{accent}</em></h1><p>{description}</p></div><svg className="page-banner-wave" viewBox="0 0 1440 66" preserveAspectRatio="none" aria-hidden="true"><path d="M0 42 C270 4 480 80 730 48 S1100 20 1440 36 L1440 66 L0 66 Z" fill="#f7f9fd" stroke="#ffca27" strokeWidth="5"/></svg></section>;
   }
   function NewsPage() {
-    const filtered=posts.filter(p=>p.title.toLowerCase().includes(search.toLowerCase())||p.category.toLowerCase().includes(search.toLowerCase()));
+    const filtered=posts.filter(p=>!p.category.toLowerCase().includes("artikel")&&(p.title.toLowerCase().includes(search.toLowerCase())||p.category.toLowerCase().includes(search.toLowerCase())));
     return <><PageBanner kicker="PUBLIKASI & INFORMASI" title="Berita" accent="& Cerita" description="Ruang berbagi perkembangan, capaian, dan kegiatan Kampus Rembang Universitas Diponegoro."/><main className="page-main public-container"><div className="news-tools"><div className="searchbox"><Search size={19}/><input placeholder="Cari berita atau kategori..." value={search} onChange={e=>setSearch(e.target.value)}/></div><Tag>{filtered.length} Artikel</Tag></div>{filtered.length?<div className="stories-grid">{filtered.map(p=><StoryCard key={p.id} post={p}/>)}</div>:<Empty title="Belum ada berita" subtitle="Coba kata kunci lain atau kunjungi kembali nanti."/>}</main><Footer/></>;
   }
+  function ArticlePage() {
+    const filtered=posts.filter(p=>p.category.toLowerCase().includes('artikel')&&(p.title.toLowerCase().includes(search.toLowerCase())||p.excerpt.toLowerCase().includes(search.toLowerCase())));
+    return <><PageBanner kicker="ARTIKEL REFLEKTIF & PEMIKIRAN" title="Gagasan untuk" accent="Kampus Berdampak" description="Refleksi, pemikiran, dan arah pengembangan Badan Pengelola Kampus Rembang Universitas Diponegoro."/><main className="page-main public-container"><div className="article-index-intro"><div><span className="content-eyebrow">ARTIKEL PILIHAN</span><h2>Membangun masa depan, dimulai dari gagasan.</h2></div><p>Artikel mengenai kepemimpinan, pengelolaan kampus, pendidikan, dan kolaborasi yang berorientasi pada manfaat nyata.</p></div><div className="news-tools"><div className="searchbox"><Search size={18}/><input placeholder="Cari artikel..." value={search} onChange={e=>setSearch(e.target.value)}/></div><Tag>{filtered.length} Artikel</Tag></div>{filtered.length?<div className="stories-grid">{filtered.map(post=><StoryCard key={post.id} post={post}/>)}</div>:<Empty title="Belum ada artikel sesuai pencarian" subtitle="Silakan gunakan kata kunci lain atau lihat kembali daftar artikel."/>}</main><Footer/></>;
+  }
   function InfoPage({kind}) {
-    const isAbout=kind==='tentang',isContact=kind==='kontak';
-    return <><PageBanner kicker="BPKR · KAMPUS REMBANG" title={isAbout?'Tentang':isContact?'Hubungi':'Layanan'} accent={isAbout?'Kami':isContact?'BPKR':'Terpadu'} description={isAbout?'Mendukung tata kelola, layanan, dan pengembangan Kampus Rembang Universitas Diponegoro.':isContact?'Terhubung dan berkolaborasi bersama Badan Pengelola Kampus Rembang.':'Akses berbagai layanan administrasi, akademik, serta operasional melalui portal yang terintegrasi.'}/><main className="page-main public-container">
-      {isContact?<div className="contact-cards"><div className="info-card"><MapPin/><h3>Alamat</h3><p>{site.contact_address||'Kampus Rembang, Universitas Diponegoro'}</p></div>{site.contact_email&&<div className="info-card"><Mail/><h3>Email</h3><p>{site.contact_email}</p></div>}{site.contact_phone&&<div className="info-card"><Phone/><h3>Telepon</h3><p>{site.contact_phone}</p></div>}</div>:isAbout?<div className="about-layout"><div className="about-visual"><span>Kampus<br/>Rembang</span><small>UNIVERSITAS DIPONEGORO</small></div><div className="about-text"><div className="section-kicker">OUR COMMITMENT</div><h2>{site.tagline}</h2><p>BPKR menyediakan ruang koordinasi pengelolaan Kampus Rembang, meliputi komunikasi layanan, fasilitas, administrasi, kolaborasi, serta dokumentasi kegiatan.</p><p>Portal ini memisahkan informasi publik dan akses operasional internal, dengan pembagian kewenangan sesuai role pengguna.</p></div></div>:<div className="contact-cards">{[['Akademik',BookOpen,'Koordinasi pembelajaran dan layanan akademik'],['Sarana & Prasarana',Building2,'Penggunaan ruang, fasilitas, dan kebutuhan kampus'],['Laboratorium',Microscope,'Pendataan laboratorium dan aktivitas pendukung'],['Administrasi',ClipboardList,'Surat, dokumen, rapat, serta tindak lanjut'],['Keuangan',Wallet,'Pengelolaan administrasi anggaran sesuai akses'],['Kerja Sama',Handshake,'Koordinasi mitra dan kegiatan kemitraan']].map(([name,I,desc])=><div className="info-card" key={name}><I/><h3>{name}</h3><p>{desc}</p></div>)}</div>}
-      <div className="info-action"><p>Sudah memiliki akun BPKR?</p><IconButton icon={LogIn} kind="primary" onClick={()=>navigate('/login')}>Masuk ke Dashboard</IconButton></div>
-    </main><Footer/></>;
+    return <><PublicContentPage kind={kind} site={site} navigate={navigate}/><Footer/></>;
   }
   function LoginPage() {
     return <main className="auth-page"><div className="auth-aside"><img className="auth-aside-logo" src="/images/undip-logo.png" alt="Lambang Universitas Diponegoro"/><div className="auth-aside-content"><span>UNIVERSITAS DIPONEGORO</span><h2>Kampus Rembang.<br/>Melayani & Berdampak.</h2><p>Portal operasional terpadu untuk seluruh unsur Badan Pengelola Kampus Rembang.</p></div><div className="auth-aside-foot">BPKR · Universitas Diponegoro · Kampus Rembang</div></div><div className="auth-form-wrap"><button className="back-link" onClick={()=>navigate('/')}><ArrowRight size={15}/> Kembali ke website</button><div className="auth-form"><div className="auth-icon"><LockKeyhole size={25}/></div><span className="section-kicker">SECURE WORKSPACE</span><h1>Selamat datang <i>kembali.</i></h1><p>Masuk menggunakan akun sesuai peran Anda di BPKR.</p><form onSubmit={loginSubmit}><Input label="Username" required autoComplete="username" value={login.username} onChange={v=>setLogin(p=>({...p,username:v}))} placeholder="Contoh: sekretaris"/><Input label="Kata sandi" required type="password" autoComplete="current-password" value={login.password} onChange={v=>setLogin(p=>({...p,password:v}))} placeholder="Masukkan kata sandi"/><button className="btn btn-primary login-submit" disabled={busy} type="submit">Masuk ke Dashboard <ArrowRight size={18}/></button></form><p className="auth-note"><ShieldCheck size={16}/> Akses diawasi dan disesuaikan dengan role pengguna.</p></div></div></main>;
@@ -374,7 +396,7 @@ function App() {
       <div className="panel"><h2>Daftar Akun <Tag>{users.length}</Tag></h2><div className="data-table-wrap"><table className="data-table"><thead><tr><th>Username</th><th>Nama</th><th>Role</th><th>Status</th><th>Aksi</th></tr></thead><tbody>{users.map(u=><tr key={u.id}><td><strong>{u.username}</strong></td><td>{u.full_name}</td><td>{roleLabels[u.role]}</td><td><Tag>{u.is_active?'Aktif':'Nonaktif'}</Tag></td><td><div className="table-actions"><button onClick={()=>setEditUser({...u,password:''})}><Pencil size={16}/></button></div></td></tr>)}</tbody></table></div></div></>;
   }
   function SitePage() {
-    return <><div className="section-title"><div><span className="dash-kicker">WEBSITE CUSTOMIZER</span><h1>Pengaturan Website</h1><p>Ubah identitas, headline, navigasi, dan informasi kontak seperti CMS WordPress.</p></div></div><div className="panel form-panel"><h2>Identitas & Landing Page</h2><div className="form-grid">{[['site_name','Nama Website'],['tagline','Tagline'],['hero_title','Judul Hero'],['hero_description','Deskripsi Hero'],['contact_email','Email'],['contact_phone','Nomor Telepon'],['contact_address','Alamat'],['footer_text','Teks Footer']].map(([key,label])=><Input key={key} label={label} value={site[key]||''} onChange={v=>setSite(p=>({...p,[key]:v}))}/>)}</div><Textarea label="Menu navigasi (JSON daftar title dan url internal)" rows={5} value={site.menus||''} onChange={v=>setSite(p=>({...p,menus:v}))}/><div className="form-actions"><IconButton kind="primary" icon={Save} disabled={busy} onClick={saveSite}>Simpan Pengaturan</IconButton><IconButton icon={ExternalLink} onClick={()=>navigate('/')}>Lihat Website</IconButton></div></div></>;
+    return <><div className="section-title"><div><span className="dash-kicker">WEBSITE CUSTOMIZER</span><h1>Pengaturan Website</h1><p>Ubah identitas, headline, navigasi, dan informasi kontak seperti CMS WordPress.</p></div></div><div className="panel form-panel"><h2>Identitas & Landing Page</h2><div className="form-grid">{[['site_name','Nama Website'],['tagline','Tagline'],['hero_title','Judul Hero'],['hero_description','Deskripsi Hero'],['contact_email','Email'],['contact_phone','Nomor Telepon'],['contact_address','Alamat'],['footer_text','Teks Footer']].map(([key,label])=><Input key={key} label={label} value={site[key]||''} onChange={v=>setSite(p=>({...p,[key]:v}))}/>)}</div><div className="site-slide-settings"><h3>Foto & Teks Slideshow</h3><p className="hint">Dua slide tampil bergantian di beranda. Foto dapat diunggah langsung atau diisi menggunakan URL.</p><div className="form-grid">{[['hero_image_1','Slide Gedung 1'],['hero_image_2','Slide Gedung 2']].map(([key,label])=><div key={key} className="site-slide-field"><Input label={'URL Foto '+label} value={site[key]||''} onChange={v=>setSite(p=>({...p,[key]:v}))}/><label className="upload-button"><ImagePlus size={18}/> Unggah Foto {label}<input type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={e=>uploadSiteImage(e.target.files?.[0],key)}/></label>{site[key]&&<img className="site-slide-preview" src={site[key]} alt={'Pratinjau '+label}/>}</div>)}</div><div className="form-grid"><Input label="Judul Slide Kedua" value={site.hero_slide_2_title||''} onChange={v=>setSite(p=>({...p,hero_slide_2_title:v}))}/><Textarea label="Deskripsi Slide Kedua" rows={3} value={site.hero_slide_2_description||''} onChange={v=>setSite(p=>({...p,hero_slide_2_description:v}))}/></div></div><Textarea label="Menu navigasi (JSON daftar title, url, dan children untuk submenu)" rows={7} value={site.menus||''} onChange={v=>setSite(p=>({...p,menus:v}))}/><div className="form-actions"><IconButton kind="primary" icon={Save} disabled={busy} onClick={saveSite}>Simpan Pengaturan</IconButton><IconButton icon={ExternalLink} onClick={()=>navigate('/')}>Lihat Website</IconButton></div></div></>;
   }
   function AuditPage() {
     return <><div className="section-title"><div><span className="dash-kicker">ACCOUNTABILITY</span><h1>Audit Aktivitas</h1><p>Riwayat tindakan sistem untuk mendukung tata kelola.</p></div></div><div className="panel"><div className="data-table-wrap"><table className="data-table"><thead><tr><th>Waktu</th><th>Aktor ID</th><th>Perubahan</th><th>Entitas</th><th>Data ID</th></tr></thead><tbody>{audit.map(a=><tr key={a.id}><td>{formatDate(a.at)}</td><td>{a.actor_id}</td><td>{a.action}</td><td>{a.entity}</td><td>{a.entity_id}</td></tr>)}</tbody></table></div></div></>;
@@ -403,6 +425,6 @@ function App() {
       {user?.must_change_password&&<div className="password-reminder" role="status"><div className="password-reminder-icon"><LockKeyhole size={21}/></div><div><strong>Kata sandi awal belum diganti</strong><p>Semua tampilan sesuai role tetap dapat dibuka. Ganti kata sandi untuk mengaktifkan fitur penyimpanan dan perubahan data.</p></div><button type="button" onClick={()=>setSection('account')}>Ganti sekarang <ArrowRight size={16}/></button></div>}
       {section==='overview'&&DashboardOverview()}{moduleLabels[section]&&ModulesPage()}{section==='meetings'&&MeetingsPage()}{section==='letters'&&LettersPage()}{section==='cms'&&CMSPage()}{section==='users'&&UsersPage()}{section==='site'&&SitePage()}{section==='audit'&&AuditPage()}{section==='account'&&AccountPage()}{error&&<div className="alert error" role="alert"><X size={17}/>{error}<button onClick={()=>setError('')}><X size={15}/></button></div>}{toast&&<div className="alert success"><CheckCircle2 size={17}/>{toast}<button onClick={()=>setToast('')}><X size={15}/></button></div>}</div></div></div>;
   }
-  return <>{path==='/dashboard' ? (user? DashboardPage() : <>{Navbar()}{LoginPage()}</>) : <>{Navbar()}{path==='/login'?LoginPage():path==='/berita'?NewsPage():path==='/tentang'||path==='/layanan'||path==='/kontak'?InfoPage({kind:path.slice(1)}):HomePage()}</>}{path!=='/dashboard'&&error&&<div className="alert error" role="alert">{error}</div>}{path!=='/dashboard'&&toast&&<div className="alert success">{toast}</div>}</>;
+  return <>{path==='/dashboard' ? (user? DashboardPage() : <>{Navbar()}{LoginPage()}</>) : <>{Navbar()}{path==='/login'?LoginPage():path==='/artikel'?ArticlePage():path==='/berita'?NewsPage():['/tentang','/visi-misi','/struktur','/pimpinan','/sejarah','/pengembangan','/program-studi','/layanan','/kontak'].includes(path)?InfoPage({kind:path.slice(1)}):HomePage()}</>}{path!=='/dashboard'&&error&&<div className="alert error" role="alert">{error}</div>}{path!=='/dashboard'&&toast&&<div className="alert success">{toast}</div>}</>;
 }
 createRoot(document.getElementById('root')).render(<App/>);
