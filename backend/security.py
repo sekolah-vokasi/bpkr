@@ -1,4 +1,5 @@
 import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -40,5 +41,5 @@ def read_token(token: str) -> dict:
         if int(payload["exp"]) <= time.time():
             raise ValueError("expired")
         return payload
-    except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+    except (ValueError, KeyError, TypeError, json.JSONDecodeError, binascii.Error):
         raise HTTPException(status_code=401, detail="Sesi tidak valid atau kedaluwarsa")

@@ -32,6 +32,7 @@ bpkr/
 ├── .env                    # lokal, RAHASIA, tidak dikomit
 ├── .gitignore
 ├── server.sh
+├── bpkr.service
 └── README.md
 ```
 
@@ -45,7 +46,7 @@ Prasyarat: PostgreSQL aktif, Python >= 3.10, Node.js >= 20, npm.
 4. Jalankan `./server.sh start` untuk menjalankan API dan UI pada `127.0.0.1:9787`.
 5. Gunakan `./server.sh build` setelah mengubah frontend, dan `./server.sh seed` jika menambah akun role yang belum ada.
 
-Untuk produksi, pertahankan `BPKR_COOKIE_SECURE=1` dan gunakan HTTPS di reverse proxy / Cloudflare Tunnel. Jangan membuka port PostgreSQL ke internet. Untuk servis jangka panjang jalankan sebagai unit systemd pengguna di host, dengan restart otomatis dan pembatasan hak akses.
+Untuk produksi, pertahankan `BPKR_COOKIE_SECURE=1` dan gunakan HTTPS di reverse proxy / Cloudflare Tunnel. Jangan membuka port PostgreSQL ke internet. Servis produksi telah disiapkan di `bpkr.service` (user systemd) dan diaktifkan dengan `systemctl --user enable --now bpkr.service`. Untuk melihat status: `systemctl --user status bpkr.service`; untuk memulai ulang: `systemctl --user restart bpkr.service`. Pengaturan `loginctl enable-linger sirobo` memastikan servis pengguna dapat aktif setelah reboot. Semua berkas source servis berada di root proyek.
 
 ## Role dan hak akses
 
@@ -73,7 +74,8 @@ Editor mengelola judul, isi rich text, gambar unggulan (unggah max 5 MB), katego
 
 - Artikel publik: `/berita/<slug>`; halaman: `/halaman/<slug>`.
 - Setiap artikel terbit disajikan sebagai HTML server-rendered dengan judul SEO, meta description, canonical URL, Open Graph, dan JSON-LD Schema.org.
-- `/robots.txt` dan `/sitemap.xml` otomatis dari konten terbit.
+- `/robots.txt` dan `/sitemap.xml` otomatis dari konten terbit; `/llms.txt` memberikan ringkasan sumber situs bagi crawler AI.
+- Beranda dan katalog berita memiliki fallback HTML berisi tautan artikel untuk crawler tanpa JavaScript. Halaman login dan dashboard diberi `noindex`.
 - Landing page publik, berita, tentang, layanan, kontak, dan customizer pengaturan website.
 - Konten editor disanitasi dengan Bleach untuk mencegah HTML berbahaya.
 - Struktur SEO membantu pengindeksan tetapi **tidak menjamin ranking Google atau keterbacaan semua mesin AI**. Untuk SEO optimal, terbitkan berita asli, foto dengan hak pakai, serta update yang relevan.
@@ -94,7 +96,7 @@ Login menggunakan session cookie HttpOnly, SameSite=Strict dan pemeriksaan heade
 
 ## Pengujian
 
-Jalankan `./server.sh test` untuk kompilasi Python, `./server.sh build` untuk validasi kompilasi React, dan cek HTTP `/api/health`. Jalankan smoke test browser Playwright pada login, ubah password pertama kali, dashboard, artikel, proses rapat/surat, dan hak akses per role sebelum rilis.
+Jalankan `./server.sh test` untuk kompilasi Python, `./server.sh build` untuk validasi kompilasi React, dan cek HTTP `/api/health`. Deployment BPKR telah diuji menggunakan Playwright Chromium dan integration test API; berkas test sementara dihapus setelah pengujian. Jalankan smoke test browser Playwright pada login, ubah password pertama kali, dashboard, artikel, proses rapat/surat, dan hak akses per role sebelum rilis.
 
 ## Catatan operasional
 

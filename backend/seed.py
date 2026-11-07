@@ -1,5 +1,5 @@
 import os
-from db import SessionLocal, User, Setting, init_db
+from db import SessionLocal, User, Setting, Post, init_db, utcnow
 from security import hash_password
 
 ROLES = ["pimpinan", "sekretaris", "keuangan", "kerjasama", "dosen", "laboran", "tendik", "mahasiswa", "superadmin", "admin"]
@@ -15,6 +15,50 @@ DEFAULT_SETTINGS = {
     "menus": '[{"title":"Beranda","url":"/"},{"title":"Berita","url":"/berita"},{"title":"Tentang","url":"/tentang"},{"title":"Layanan","url":"/layanan"},{"title":"Kontak","url":"/kontak"}]'
 }
 
+DEFAULT_POSTS = [
+    {
+        "title": "UNDIP Lantik Kepala BPKR, Kampus Rembang Diarahkan Menjadi Percontohan Tata Kelola Modern",
+        "slug": "undip-lantik-kepala-bpkr-kampus-rembang-tata-kelola-modern",
+        "category": "Kabar Kampus",
+        "excerpt": "Pelantikan pengelola Kampus Rembang pada 2 November 2026 menjadi titik awal penguatan tata kelola, digitalisasi layanan, dan kolaborasi di lingkungan UNDIP.",
+        "content": """<p>Universitas Diponegoro (UNDIP) melantik pimpinan pengelola sejumlah kampus di daerah pada Senin, 2 November 2026, di Gedung SAMWA UNDIP, Semarang. Salah satu pejabat yang dilantik adalah Prof. Dr. Ir. Budiyono, M.Si. sebagai Kepala Badan Pengelola Kampus Rembang (BPKR).</p>
+<p>Menurut laporan ANTARA Jateng yang diterbitkan pada 3 November 2026, pengembangan Kampus Rembang diarahkan untuk memperkuat tata kelola modern, layanan kampus yang responsif, serta proses administrasi yang lebih efektif. Pengelolaan fasilitas dan dukungan bagi kegiatan akademik menjadi bagian penting dari arah pengembangan tersebut.</p>
+<h2>Transformasi digital dan layanan</h2>
+<p>Rencana pengembangan menekankan digitalisasi administrasi, penggunaan data untuk pengambilan keputusan, penguatan layanan akademik dan nonakademik, serta peluang pemanfaatan kecerdasan artifisial secara bertanggung jawab. Pendekatan ini membuka ruang sinergi antara sivitas akademika, pemerintah, industri, dan masyarakat.</p>
+<p>Dalam laporan yang sama, Rektor UNDIP menyampaikan harapan agar Kampus Rembang menjadi contoh pengelolaan kampus yang unggul. Arah tersebut merupakan target pengembangan, bukan capaian yang telah dinyatakan selesai.</p>
+<p>Sumber informasi: <a href="https://jateng.antaranews.com/berita/651811/undip-lantik-pengelola-kampus-di-daerah-kampus-rembang-disiapkan-jadi-percontohan">ANTARA Jateng, 3 November 2026</a>. Artikel ini merupakan ringkasan dan parafrase dengan atribusi.</p>""",
+        "tags": "BPKR, UNDIP, Kampus Rembang, Tata Kelola, Digitalisasi",
+        "seo_description": "UNDIP melantik Kepala BPKR pada 2 November 2026. Kampus Rembang diarahkan menuju tata kelola modern, pelayanan prima, dan transformasi digital."
+    },
+    {
+        "title": "Mengenal Portal Digital BPKR Kampus Rembang: Berita dan Layanan dalam Satu Tempat",
+        "slug": "mengenal-portal-digital-bpkr-kampus-rembang",
+        "category": "Informasi Layanan",
+        "excerpt": "Portal BPKR menghadirkan berita publik, informasi layanan, serta dashboard kerja internal dengan pembagian akses berdasarkan peran pengguna.",
+        "content": """<p>Portal digital BPKR dibuat sebagai titik akses informasi publik dan sarana pengelolaan internal Kampus Rembang. Pengunjung dapat mengikuti berita dan informasi layanan, sementara pengguna terdaftar mengakses dashboard sesuai kewenangannya.</p>
+<h2>Dua ruang dalam satu platform</h2>
+<p>Bagian publik memuat halaman beranda, berita, pengenalan BPKR, layanan, dan kontak. Redaksi dapat menerbitkan artikel dengan judul, kategori, gambar, tautan, serta metadata untuk membantu mesin pencari memahami informasi.</p>
+<p>Bagian internal menyediakan modul administrasi, agenda, akademik, keuangan, kerja sama, laboratorium, sarana prasarana, dan layanan mahasiswa. Fitur yang tampil disesuaikan dengan role akun, termasuk pimpinan, sekretaris, keuangan, kerja sama, dosen, laboran, tenaga kependidikan, mahasiswa, dan administrator.</p>
+<p>Pemanfaatan portal tetap mengikuti kewenangan masing-masing unit. Untuk pertama kali masuk, setiap akun diwajibkan mengganti kata sandi awal demi keamanan akses.</p>""",
+        "tags": "Portal BPKR, Sistem Informasi, Kampus Rembang",
+        "seo_description": "Kenali portal digital BPKR Kampus Rembang: berita, layanan publik, dan dashboard internal berbasis role untuk koordinasi kegiatan kampus."
+    },
+    {
+        "title": "Dari Notula ke Tindak Lanjut: Penggunaan Modul Rapat dan Surat Digital BPKR",
+        "slug": "modul-rapat-notula-surat-digital-bpkr",
+        "category": "Panduan Sistem",
+        "excerpt": "Kenali cara mengelola catatan rapat menjadi keputusan dan tindak lanjut, serta menyusun surat yang dapat ditinjau sebelum disahkan.",
+        "content": """<p>Modul rapat digital BPKR membantu petugas menyimpan agenda, tanggal, lokasi, peserta, pembahasan, serta keputusan. Format baris yang terstruktur memudahkan pemisahan catatan menjadi daftar keputusan dan tugas yang perlu ditindaklanjuti.</p>
+<h2>Format pencatatan yang praktis</h2>
+<p>Untuk mencatat keputusan, awali baris dengan kata <strong>Keputusan:</strong>. Untuk tindak lanjut, gunakan format <strong>Tugas: uraian pekerjaan | PIC: penanggung jawab | Tenggat: YYYY-MM-DD</strong>. Setelah diproses, petugas dapat memeriksa hasil, memperbarui status, dan menyimpan notula.</p>
+<h2>Alur dokumen surat</h2>
+<p>Modul surat menyediakan pilihan surat keluar, undangan rapat, nota dinas, dan laporan kegiatan. Petugas memasukkan tujuan, perihal, instruksi, tanggal, dan pejabat penandatangan, lalu memeriksa dan menyunting naskah.</p>
+<p>Pengolahan teks pada versi ini menggunakan aturan dan templat, bukan AI generatif. Keputusan rapat, substansi dokumen, nomor surat, dan persetujuan tetap memerlukan verifikasi manusia yang berwenang.</p>""",
+        "tags": "Notula, Surat, Rapat, Administrasi Digital, BPKR",
+        "seo_description": "Panduan modul rapat dan surat BPKR: olah notula, keputusan, PIC, tenggat, monitoring tugas, dan penyusunan surat untuk review."
+    }
+]
+
 def seed():
     init_db()
     password = os.getenv("BPKR_INITIAL_PASSWORD")
@@ -27,6 +71,11 @@ def seed():
         for key, value in DEFAULT_SETTINGS.items():
             if db.get(Setting, key) is None:
                 db.add(Setting(key=key, value=value))
+        author = db.query(User).filter_by(username="admin").first()
+        for article in DEFAULT_POSTS:
+            if not db.query(Post).filter_by(slug=article["slug"]).first():
+                db.add(Post(**article, status="published", type="news", seo_title=article["title"],
+                            author_id=author.id if author else None, published_at=utcnow()))
         db.commit()
 
 if __name__ == "__main__":

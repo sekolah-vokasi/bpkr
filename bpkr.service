@@ -1,0 +1,19 @@
+[Unit]
+Description=BPKR Kampus Rembang - FastAPI and React
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/sirobo/bpkr
+ExecStart=/home/sirobo/bpkr/server.sh start
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+Environment=PYTHONUNBUFFERED=1
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=default.target

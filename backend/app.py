@@ -1,15 +1,15 @@
 import json
 import os
-import re
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime
+from time import monotonic
 from html import escape
 from pathlib import Path
 from typing import Optional
 
 import bleach
 from fastapi import FastAPI, Depends, HTTPException, Request, Response, UploadFile, File, Query
-from fastapi.responses import HTMLResponse, FileResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
@@ -28,6 +28,9 @@ ROLES = ["pimpinan", "sekretaris", "keuangan", "kerjasama", "dosen", "laboran", 
 POWER = {"admin", "superadmin"}
 EDITOR = POWER | {"pimpinan", "sekretaris", "kerjasama"}
 MEETING_EDITORS = POWER | {"pimpinan", "sekretaris"}
+MEETING_READERS = set(ROLES) - {"mahasiswa"}
+APPROVERS = POWER | {"pimpinan"}
+LOGIN_FAILURES = {}
 LETTER_EDITORS = POWER | {"pimpinan", "sekretaris", "tendik"}
 MODULE_PERMISSIONS = {
     "agenda": set(ROLES),
@@ -170,10 +173,17 @@ def health(db: Session = Depends(db_session)):
     return {"ok": True, "service": "bpkr", "database": "postgresql", "version": "1.0.0"}
 
 @app.post("/api/auth/login")
-def login(data: LoginIn, response: Response, db: Session = Depends(db_session)):
+def login(data: LoginIn, response: Response, request: Request, db: Session = Depends(db_session)):
+    ip = request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "local")
+    now = monotonic()
+    failures = [t for t in LOGIN_FAILURES.get(ip, []) if now - t < 900]
+    if len(failures) >= 20:
+        raise HTTPException(429, "Terlalu banyak percobaan masuk. Coba kembali nanti")
     user = db.query(User).filter_by(username=data.username.strip().lower()).first()
     if not user or not user.is_active or not verify_password(data.password, user.password_hash):
+        LOGIN_FAILURES[ip] = failures + [now]
         raise HTTPException(401, "Username atau kata sandi salah")
+    LOGIN_FAILURES.pop(ip, None)
     token = create_token(user.id, user.password_hash[-20:])
     csrf = secrets.token_urlsafe(32)
     secure = os.environ.get("BPKR_COOKIE_SECURE", "1") == "1"
@@ -363,6 +373,8 @@ def update_user(user_id: int, data: UserIn, user: User = Depends(current_user), 
     row = db.get(User, user_id)
     if not row:
         raise HTTPException(404, "Pengguna tidak ditemukan")
+    if data.role not in ROLES:
+        raise HTTPException(422, "Role tidak valid")
     if (row.role == "superadmin" or data.role == "superadmin") and user.role != "superadmin":
         raise HTTPException(403, "Role superadmin dilindungi")
     if user.id == row.id and not data.is_active:
@@ -444,11 +456,16 @@ def parse_meeting(payload: dict, user: User = Depends(current_user)):
 
 @app.get("/api/meetings")
 def list_meetings(user: User = Depends(current_user), db: Session = Depends(db_session)):
+    require(user, MEETING_READERS)
     return [ser(x, MEETING_KEYS) for x in db.query(Meeting).order_by(Meeting.created_at.desc()).limit(150).all()]
 
 @app.post("/api/meetings")
 def create_meeting(data: MeetingIn, user: User = Depends(current_user), db: Session = Depends(db_session)):
     require(user, MEETING_EDITORS)
+    if data.status not in {"draft", "review", "approved"}:
+        raise HTTPException(422, "Status rapat tidak valid")
+    if data.status == "approved":
+        require(user, APPROVERS)
     payload = data.model_dump()
     if not payload["decisions"] and not payload["tasks"] and payload["notes"]:
         payload.update(parse_meeting_notes(payload["notes"]))
@@ -462,9 +479,15 @@ def create_meeting(data: MeetingIn, user: User = Depends(current_user), db: Sess
 @app.put("/api/meetings/{meeting_id}")
 def update_meeting(meeting_id: int, data: MeetingIn, user: User = Depends(current_user), db: Session = Depends(db_session)):
     require(user, MEETING_EDITORS)
+    if data.status not in {"draft", "review", "approved"}:
+        raise HTTPException(422, "Status rapat tidak valid")
+    if data.status == "approved":
+        require(user, APPROVERS)
     row = db.get(Meeting, meeting_id)
     if not row:
         raise HTTPException(404, "Rapat tidak ditemukan")
+    if row.status == "approved":
+        require(user, APPROVERS)
     for k, v in data.model_dump().items():
         setattr(row, k, v)
     track(db, user, "update", "meetings", row.id)
@@ -492,6 +515,10 @@ def list_letters(user: User = Depends(current_user), db: Session = Depends(db_se
 @app.post("/api/letters")
 def create_letter(data: LetterIn, user: User = Depends(current_user), db: Session = Depends(db_session)):
     require(user, LETTER_EDITORS)
+    if data.status not in {"draft", "review", "approved"}:
+        raise HTTPException(422, "Status surat tidak valid")
+    if data.status == "approved":
+        require(user, APPROVERS)
     payload = data.model_dump()
     if not payload["body"]:
         payload["body"] = letter_body(data.kind, data.recipient, data.subject, data.instructions, data.signer, data.date, data.number, data.attachment)
@@ -505,9 +532,15 @@ def create_letter(data: LetterIn, user: User = Depends(current_user), db: Sessio
 @app.put("/api/letters/{letter_id}")
 def update_letter(letter_id: int, data: LetterIn, user: User = Depends(current_user), db: Session = Depends(db_session)):
     require(user, LETTER_EDITORS)
+    if data.status not in {"draft", "review", "approved"}:
+        raise HTTPException(422, "Status surat tidak valid")
+    if data.status == "approved":
+        require(user, APPROVERS)
     row = db.get(Letter, letter_id)
     if not row:
         raise HTTPException(404, "Surat tidak ditemukan")
+    if row.status == "approved":
+        require(user, APPROVERS)
     payload = data.model_dump()
     if not payload["body"]:
         payload["body"] = letter_body(data.kind, data.recipient, data.subject, data.instructions, data.signer, data.date, data.number, data.attachment)
@@ -602,11 +635,51 @@ app.mount("/media", StaticFiles(directory=str(UPLOADS)), name="media")
 if (STATIC / "assets").exists():
     app.mount("/assets", StaticFiles(directory=str(STATIC / "assets")), name="assets")
 
-@app.get("/{path:path}", include_in_schema=False)
-def spa(path: str):
-    if path.startswith("api/"):
-        raise HTTPException(404, "API tidak ditemukan")
+@app.get("/llms.txt", response_class=PlainTextResponse, include_in_schema=False)
+def llms_txt():
+    return ("# BPKR — Badan Pengelola Kampus Rembang, Universitas Diponegoro\n"
+            "Portal berita, layanan kampus, kerja sama, fasilitas, dan kegiatan akademik.\n"
+            "Sumber informasi resmi: " + BASE_URL + "\n"
+            "Berita dan publikasi: " + BASE_URL + "/berita\n"
+            "Daftar URL: " + BASE_URL + "/sitemap.xml\n"
+            "Halaman publik dapat dikutip dengan menyebut sumber BPKR.\n"
+            "Konten dashboard dan API privat tidak tersedia bagi publik.\n")
+
+@app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
+def spa(path: str, request: Request, db: Session = Depends(db_session)):
+    if path.startswith(("api/", "media/", "assets/")):
+        raise HTTPException(404, "Rute tidak tersedia")
     index = STATIC / "index.html"
     if not index.exists():
         return HTMLResponse("<h1>BPKR frontend belum dibangun</h1>", status_code=503)
-    return FileResponse(index)
+    if request.method == "HEAD":
+        return Response(status_code=200, media_type="text/html")
+    html = index.read_text(encoding="utf-8")
+    if path in {"", "berita", "tentang", "layanan", "kontak"}:
+        headings = {
+            "": ("BPKR Kampus Rembang UNDIP | Berita, Layanan dan Kolaborasi", "Portal informasi, berita, layanan, dan kolaborasi Badan Pengelola Kampus Rembang Universitas Diponegoro."),
+            "berita": ("Berita BPKR Kampus Rembang | UNDIP", "Berita dan informasi resmi terbaru seputar kegiatan, layanan, dan perkembangan Kampus Rembang UNDIP."),
+            "tentang": ("Tentang BPKR | Kampus Rembang UNDIP", "Kenali peran dan layanan Badan Pengelola Kampus Rembang Universitas Diponegoro."),
+            "layanan": ("Layanan BPKR | Akademik, Fasilitas dan Kemitraan", "Informasi layanan administrasi, akademik, fasilitas, laboratorium, dan kemitraan BPKR UNDIP."),
+            "kontak": ("Hubungi BPKR Kampus Rembang", "Informasi alamat dan kontak Badan Pengelola Kampus Rembang Universitas Diponegoro."),
+        }
+        title, desc = headings[path]
+        canonical = BASE_URL + ("/" + path if path else "/")
+        html = html.replace("<title>BPKR · Kampus Rembang UNDIP</title>", "<title>" + escape(title) + "</title>")
+        html = html.replace('<meta name="description" content="Portal berita, layanan, dan kolaborasi Badan Pengelola Kampus Rembang Universitas Diponegoro.">',
+                            '<meta name="description" content="' + escape(desc) + '">')
+        html = html.replace('href="https://bpkr.otomasi.app/"', 'href="' + escape(canonical) + '"')
+        html = html.replace("</head>", '<meta property="og:title" content="' + escape(title) + '"><meta property="og:description" content="' +
+                            escape(desc) + '"><meta property="og:url" content="' + escape(canonical) + '"></head>')
+        title_html = '<h1>' + escape(title) + '</h1>'
+        links = ""
+        if path in {"", "berita"}:
+            stories = db.query(Post).filter_by(type="news", status="published").order_by(Post.published_at.desc()).limit(24).all()
+            links = "<h2>Berita terbaru</h2><ul>" + "".join(
+                '<li><a href="/berita/' + escape(p.slug) + '">' + escape(p.title) + '</a><p>' +
+                escape(p.excerpt or "") + '</p></li>' for p in stories
+            ) + "</ul>"
+        html = html.replace('<div id="root"></div>', '<div id="root"><main aria-label="Informasi BPKR">' + title_html + links + '</main></div>')
+    elif path in {"dashboard", "login"} or path.startswith(("dashboard/", "login/")):
+        html = html.replace("</head>", '<meta name="robots" content="noindex, nofollow"></head>')
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
