@@ -50,7 +50,7 @@ MODULE_EDITORS = {
     "akademik": POWER | {"pimpinan", "dosen"},
     "laboratorium": POWER | {"pimpinan", "laboran"},
     "sarpras": POWER | {"pimpinan", "laboran", "tendik"},
-    "mahasiswa": POWER | {"pimpinan", "tendik"},
+    "mahasiswa": POWER | {"pimpinan", "tendik", "mahasiswa"},
 }
 app = FastAPI(title="BPKR API", version="1.0.0", docs_url="/api/docs", openapi_url="/api/openapi.json", redoc_url=None)
 
@@ -417,6 +417,8 @@ def list_entries(module: str, q: str = "", user: User = Depends(current_user), d
 @app.post("/api/entries")
 def create_entry(data: EntryIn, user: User = Depends(current_user), db: Session = Depends(db_session)):
     verify_module(data.module, user.role, True)
+    if user.role == "mahasiswa" and data.status != "baru":
+        raise HTTPException(403, "Pengajuan mahasiswa harus dimulai dengan status baru")
     row = Entry(**data.model_dump(), created_by=user.id)
     db.add(row)
     db.flush()
@@ -430,6 +432,8 @@ def update_entry(entry_id: int, data: EntryIn, user: User = Depends(current_user
     if not row:
         raise HTTPException(404, "Data tidak ditemukan")
     verify_module(row.module, user.role, True)
+    if user.role == "mahasiswa" and (row.created_by != user.id or row.status != "baru" or data.status != "baru"):
+        raise HTTPException(403, "Mahasiswa hanya dapat mengubah pengajuannya sendiri yang belum diproses")
     if data.module != row.module:
         raise HTTPException(422, "Modul tidak boleh diubah")
     for key, value in data.model_dump().items():
@@ -444,6 +448,8 @@ def delete_entry(entry_id: int, user: User = Depends(current_user), db: Session 
     if not row:
         raise HTTPException(404, "Data tidak ditemukan")
     verify_module(row.module, user.role, True)
+    if user.role == "mahasiswa" and (row.created_by != user.id or row.status != "baru"):
+        raise HTTPException(403, "Mahasiswa hanya dapat menghapus pengajuannya sendiri yang belum diproses")
     track(db, user, "delete", row.module, row.id)
     db.delete(row)
     db.commit()

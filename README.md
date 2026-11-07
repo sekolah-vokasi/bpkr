@@ -6,7 +6,7 @@ Portal internal dan publik Badan Pengelola Kampus Rembang (Universitas Diponegor
 
 - Frontend: React 19, Vite 6, Lucide Icons, CSS responsif.
 - Backend: Python 3.10+, FastAPI, SQLAlchemy.
-- Database: PostgreSQL `bpkr` (role OS PostgreSQL lokal `sirobo`).
+- Database: PostgreSQL `bpkr` dengan akun aplikasi khusus `bpkr_app` tanpa hak superuser.
 - Akses publik: https://bpkr.otomasi.app via Cloudflare Tunnel ke `127.0.0.1:9787`.
 - Satu origin: FastAPI menyajikan frontend Vite yang sudah dibuild dan seluruh `/api/*`.
 
@@ -40,7 +40,7 @@ bpkr/
 
 Prasyarat: PostgreSQL aktif, Python >= 3.10, Node.js >= 20, npm.
 
-1. Siapkan database PostgreSQL bernama `bpkr` dengan user yang dapat mengaksesnya (default koneksi local Unix socket).
+1. Siapkan database PostgreSQL `bpkr` dan role aplikasi non-superuser `bpkr_app` dengan autentikasi SCRAM-SHA-256. Berikan hak CONNECT untuk database, serta USAGE/CREATE schema, SELECT/INSERT/UPDATE/DELETE tabel, dan USAGE pada sekuens yang dibutuhkan.
 2. Salin `.env.example` ke `.env`, isi `DATABASE_URL`, `BPKR_SECRET` acak minimal 32 karakter, `BPKR_INITIAL_PASSWORD`, dan opsi domain.
 3. Jalankan `chmod +x server.sh && ./server.sh setup`.
 4. Jalankan `./server.sh start` untuk menjalankan API dan UI pada `127.0.0.1:9787`.
@@ -62,7 +62,7 @@ Akses menu:
 - Dosen: akademik, laboratorium (baca), mahasiswa (baca), agenda.
 - Laboran: laboratorium, sarana prasarana, agenda.
 - Tendik: administrasi, sarana prasarana, surat, mahasiswa, agenda.
-- Mahasiswa: hanya data pribadinya pada layanan mahasiswa dan agenda; tidak dapat mengubah data master.
+- Mahasiswa: melihat agenda serta membuat/mengubah/menghapus permohonannya sendiri selama berstatus `baru`; tidak dapat mengubah pengajuan orang lain atau data master.
 - Admin: konfigurasi situs, pengguna non-superadmin, audit, serta administrasi.
 - Superadmin: seluruh fungsi termasuk pengelolaan akun superadmin.
 
