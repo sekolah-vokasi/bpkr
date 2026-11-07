@@ -52,7 +52,7 @@ Untuk produksi, pertahankan `BPKR_COOKIE_SECURE=1` dan gunakan HTTPS di reverse 
 
 Akun contoh diinisialisasi menggunakan username identik dengan nama role: `pimpinan`, `sekretaris`, `keuangan`, `kerjasama`, `dosen`, `laboran`, `tendik`, `mahasiswa`, `superadmin`, `admin`.
 
-**Keamanan:** kata sandi inisial diberikan melalui variabel lokal `BPKR_INITIAL_PASSWORD` saat instalasi, di-hash scrypt menggunakan salt unik di PostgreSQL, dan **semua akun wajib mengganti password ketika masuk pertama kali** (minimal 12 karakter). Dilarang menaruh file `.env` atau cookie sesi di GitHub. Di produksi, lakukan rotasi seluruh akun bootstrap secepatnya.
+**Keamanan:** kata sandi inisial diberikan melalui variabel lokal `BPKR_INITIAL_PASSWORD` saat instalasi dan di-hash scrypt menggunakan salt unik di PostgreSQL. Semua akun **wajib mengganti password awal** (minimal 12 karakter). Setelah login, pengguna tetap dapat membuka dashboard dan semua tampilan sesuai role, serta melihat banner pengingat dan menu **Akun & Keamanan** untuk mengganti password. Sebelum penggantian dilakukan, backend membatasi operasi perubahan data (POST/PUT/PATCH/DELETE) kecuali penggantian password dan logout; penelusuran tampilan (GET) tetap tersedia. Dilarang menaruh file `.env` atau cookie sesi di GitHub. Di produksi, lakukan rotasi seluruh akun bootstrap secepatnya.
 
 Akses menu:
 - Pimpinan: ringkasan lintas modul, rapat, surat, editorial, dan aktivitas operasional.
