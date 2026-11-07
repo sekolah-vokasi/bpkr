@@ -618,8 +618,8 @@ def render_article(post: Post):
 <meta property="og:type" content="article"><meta property="og:title" content="{title}"><meta property="og:description" content="{desc}">
 <meta property="og:url" content="{escape(link)}"><meta property="og:image" content="{img}">
 <meta name="twitter:card" content="summary_large_image"><script type="application/ld+json">{structured}</script>
-<style>body{{margin:0;background:#f7f9fc;color:#182e42;font:17px/1.8 system-ui,Arial}}header{{background:#102d46;color:white;padding:19px 7%}}header a{{color:white;text-decoration:none;font-weight:800}}main{{max-width:860px;margin:40px auto;background:white;padding:clamp(22px,5vw,60px);border-radius:15px}}h1{{font-size:clamp(28px,4vw,48px);line-height:1.2}}.meta{{color:#66778b;font-size:14px}}.hero{{width:100%;max-height:470px;object-fit:cover;border-radius:12px}}.article img{{max-width:100%;height:auto}}a{{color:#176780}}footer{{text-align:center;padding:25px;color:#69798b}}</style>
-</head><body><header><a href="/">BPKR · UNDIP REMBANG</a></header><main><small>{escape(post.category)}</small><h1>{escape(post.title)}</h1><p class="meta">{(post.published_at or post.created_at).strftime("%d %B %Y")}</p>
+<style>body{{margin:0;background:#f7f9fd;color:#183657;font:16px/1.85 system-ui,Arial,sans-serif}}*{{box-sizing:border-box}}a{{color:#0a4e94;text-decoration:none}}header{{height:88px;background:white;padding:0 max(20px,5%);display:flex;align-items:center;justify-content:space-between;gap:20px;border-bottom:1px solid #e1e8f2;position:relative;z-index:2}}header a.brand{{display:flex;align-items:center;gap:13px;color:#07366b;line-height:1.25;font-size:16px}}header img{{width:45px;height:56px;object-fit:contain}}header b,header small{{display:block}}header small{{color:#5c7290;font-size:12px;font-weight:600}}header nav{{display:flex;gap:22px;font-size:13px;font-weight:800}}.article-banner{{height:260px;background:linear-gradient(90deg,#063569ed,#07366b7d),url('/images/kampus-rembang.jpg') center 45%/cover no-repeat;position:relative;border-bottom:6px solid #ffca27}}.article-banner span{{position:absolute;top:78px;left:max(20px,calc((100% - 1040px)/2));color:#ffca27;letter-spacing:2px;font-size:12px;font-weight:800}}main{{position:relative;max-width:960px;margin:-86px auto 50px;background:white;padding:clamp(24px,5vw,65px);border-radius:16px;box-shadow:0 13px 45px #0d35601a}}main>small{{color:#0b5699;font-weight:800;letter-spacing:1px;font-size:11px}}h1{{font-size:clamp(29px,4vw,48px);line-height:1.24;letter-spacing:-.04em;color:#092f60;margin:17px 0}}.meta{{color:#667b95;font-size:13px;border-bottom:1px solid #e1e9f3;padding-bottom:22px}}.hero{{width:100%;max-height:470px;object-fit:cover;border-radius:12px;margin:22px 0}}.article img{{max-width:100%;height:auto}}.article{{overflow-wrap:anywhere}}.article h2,.article h3{{color:#07366b}}main>p:last-child{{margin-top:32px;border-top:1px solid #e0e8f2;padding-top:19px;font-weight:800}}footer{{text-align:center;background:#07366b;padding:25px;color:#d8e7f7;font-size:12px}}@media(max-width:700px){{header{{height:74px;padding:0 16px}}header a.brand{{font-size:12px}}header img{{width:38px;height:46px}}header nav{{gap:12px;font-size:11px}}.article-banner{{height:180px}}.article-banner span{{left:20px;top:45px}}main{{margin:-45px 13px 25px}}}}</style>
+</head><body><header><a class="brand" href="/"><img src="/images/undip-logo.png" alt="Lambang Universitas Diponegoro"><span><b>UNIVERSITAS DIPONEGORO</b><small>Kampus Rembang · BPKR</small></span></a><nav><a href="/">Beranda</a><a href="/berita">Berita</a></nav></header><div class="article-banner"><span>BPKR · PUBLIKASI KAMPUS REMBANG</span></div><main><small>{escape(post.category)}</small><h1>{escape(post.title)}</h1><p class="meta">{(post.published_at or post.created_at).strftime("%d %B %Y")}</p>
 {('<img class="hero" alt="' + escape(post.title) + '" src="' + escape(post.image_url) + '">') if post.image_url else ''}
 <article class="article">{body}</article><p><a href="/berita">← Kembali ke berita</a></p></main><footer>Badan Pengelola Kampus Rembang · Universitas Diponegoro</footer></body></html>""")
 
@@ -638,6 +638,8 @@ def page(slug: str, db: Session = Depends(db_session)):
     return render_article(post)
 
 app.mount("/media", StaticFiles(directory=str(UPLOADS)), name="media")
+if (STATIC / "images").exists():
+    app.mount("/images", StaticFiles(directory=str(STATIC / "images")), name="images")
 if (STATIC / "assets").exists():
     app.mount("/assets", StaticFiles(directory=str(STATIC / "assets")), name="assets")
 
@@ -653,7 +655,7 @@ def llms_txt():
 
 @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
 def spa(path: str, request: Request, db: Session = Depends(db_session)):
-    if path.startswith(("api/", "media/", "assets/")):
+    if path.startswith(("api/", "media/", "assets/", "images/")):
         raise HTTPException(404, "Rute tidak tersedia")
     index = STATIC / "index.html"
     if not index.exists():

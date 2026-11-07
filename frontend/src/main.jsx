@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
-  ArrowRight, ArrowUpRight, BookOpen, Building2, CalendarDays, Check,
+  ArrowRight, ArrowUpRight, BookOpen, Building2, CalendarDays,
   ChevronDown, ClipboardList, FileText, Globe2, Handshake,
   ImagePlus, LayoutDashboard, LogIn, LogOut, Mail, Menu, Microscope,
   Newspaper, Plus, Search, Settings, ShieldCheck, Sparkles, Trash2,
   Users, Wallet, X, CheckCircle2, Save,
-  GraduationCap, MapPin, Phone, LockKeyhole,
+  GraduationCap, MapPin, Phone, LockKeyhole, Leaf,
   ExternalLink, Eye, Pencil, RotateCcw
 } from 'lucide-react';
 import './style.css';
@@ -77,6 +77,7 @@ function App() {
   const [login, setLogin] = useState({username:'',password:''});
   const [passwords, setPasswords] = useState({old_password:'',new_password:''});
   const [menuOpen, setMenuOpen] = useState(false);
+  const [heroSlide, setHeroSlide] = useState(0);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState('');
   const [error, setError] = useState('');
@@ -103,6 +104,11 @@ function App() {
     setMenuOpen(false);
     window.scrollTo({top:0, behavior:'instant'});
   }
+  useEffect(() => {
+    if (path !== '/') return;
+    const interval = setInterval(() => setHeroSlide(current => (current + 1) % 3), 8000);
+    return () => clearInterval(interval);
+  }, [path]);
   useEffect(() => {
     const pop = () => setPath(location.pathname);
     window.addEventListener('popstate',pop);
@@ -243,15 +249,18 @@ function App() {
   function Navbar() {
     return <header className="site-header">
       <div className="header-inner">
-        <button className="brand" onClick={()=>navigate('/')} aria-label="Beranda BPKR">
-          <span className="brand-mark"><span>B</span><span className="brand-dot"/></span>
-          <span className="brand-name">BPKR<span>UNDIP · KAMPUS REMBANG</span></span>
+        <button className="brand" onClick={()=>navigate('/')} aria-label="Beranda Universitas Diponegoro Kampus Rembang">
+          <img className="brand-logo" src="/images/undip-logo.png" alt="Lambang Universitas Diponegoro"/>
+          <span className="brand-university">UNIVERSITAS<br/>DIPONEGORO</span>
+          <span className="brand-separator"/>
+          <span className="brand-campus">Kampus<br/><strong>Rembang</strong></span>
         </button>
         <nav className={'nav-links '+(menuOpen?'opened':'')}>
           {(menus.length?menus:[{title:'Beranda',url:'/'},{title:'Berita',url:'/berita'},{title:'Tentang',url:'/tentang'},{title:'Layanan',url:'/layanan'},{title:'Kontak',url:'/kontak'}]).map((m,i)=><button key={i} className={path===m.url?'active':''} onClick={()=>navigate(m.url)}>{m.title}</button>)}
         </nav>
         <div className="header-actions">
-          <IconButton icon={user?LayoutDashboard:LogIn} kind="nav" onClick={()=>navigate(user?'/dashboard':'/login')}>{user?'Dashboard':'Masuk Portal'}</IconButton>
+          <a className="undip-link" href="https://undip.ac.id/" target="_blank" rel="noopener noreferrer">UNDIP <ExternalLink size={15}/></a>
+          <IconButton icon={user?LayoutDashboard:LogIn} kind="nav" onClick={()=>navigate(user?'/dashboard':'/login')}>{user?'Dashboard':'Portal BPKR'}</IconButton>
           <button className="menu-toggle" aria-label="Buka menu" onClick={()=>setMenuOpen(x=>!x)}>{menuOpen?<X/>:<Menu/>}</button>
         </div>
       </div>
@@ -259,7 +268,7 @@ function App() {
   }
   function Footer() {
     return <footer className="footer-public"><div className="public-container">
-      <div className="footer-grid"><div><div className="footer-brand">BPKR<span className="accent-dot">.</span></div><p>{site.tagline||'Kolaborasi untuk Kampus Rembang'}</p><div className="footer-social"><Globe2 size={19}/> Universitas Diponegoro</div></div>
+      <div className="footer-grid"><div><div className="footer-brand"><img src="/images/undip-logo.png" alt="Logo UNDIP"/>BPKR<span className="accent-dot">.</span></div><p>{site.tagline||'Kolaborasi untuk Kampus Rembang'}</p><div className="footer-social"><Globe2 size={19}/> Universitas Diponegoro</div></div>
       <div><h4>Jelajahi</h4><button onClick={()=>navigate('/')}>Beranda</button><button onClick={()=>navigate('/berita')}>Berita & Publikasi</button><button onClick={()=>navigate('/layanan')}>Layanan Terpadu</button></div>
       <div><h4>Informasi</h4><button onClick={()=>navigate('/tentang')}>Tentang BPKR</button><button onClick={()=>navigate('/kontak')}>Hubungi Kami</button><button onClick={()=>navigate('/login')}>Login Sistem</button></div>
       <div><h4>Alamat & Kontak</h4><p><MapPin size={15}/> {site.contact_address||'Kampus Rembang, Universitas Diponegoro'}</p>{site.contact_email&&<p><Mail size={15}/> {site.contact_email}</p>}{site.contact_phone&&<p><Phone size={15}/> {site.contact_phone}</p>}</div></div>
@@ -273,17 +282,32 @@ function App() {
     </a>;
   }
   function HomePage() {
+    const heroSlides = [
+      {eyebrow:'BADAN PENGELOLA KAMPUS REMBANG',pretitle:'Universitas Diponegoro',title:site.hero_title||'Kampus Rembang',description:site.hero_description||'Kampus pengembangan UNDIP di pesisir utara Jawa yang mencetak talenta unggul, adaptif, dan berdampak bagi masyarakat.'},
+      {eyebrow:'LAYANAN KAMPUS TERPADU',pretitle:'Pengelolaan Kampus',title:'Melayani dengan Sepenuh Hati',description:'Akses informasi akademik, administrasi, fasilitas, dan berbagai layanan Kampus Rembang melalui satu portal.'},
+      {eyebrow:'RISET, INOVASI & KEMITRAAN',pretitle:'Bersama Kampus Rembang',title:'Berkolaborasi dan Berdampak',description:'Memperkuat sinergi pendidikan, industri, pemerintah, dan masyarakat untuk masa depan yang berkelanjutan.'}
+    ];
+    const currentHero = heroSlides[heroSlide];
     return <><main>
-      <section className="hero"><div className="public-container hero-grid">
-        <div className="hero-content">
-          <div className="eyebrow"><span className="eyebrow-line"/> BADAN PENGELOLA KAMPUS REMBANG</div>
-          <h1>{site.hero_title||'Ruang Kolaborasi, Inovasi, dan Kemajuan Kampus Rembang.'}</h1>
-          <p>{site.hero_description||'Informasi, layanan, dan kerja sama kampus dalam satu pintu.'}</p>
-          <div className="hero-cta"><IconButton kind="gold" icon={ArrowRight} onClick={()=>navigate('/layanan')}>Jelajahi Layanan</IconButton><button className="hero-link" onClick={()=>navigate('/tentang')}>Kenali BPKR <ArrowUpRight size={18}/></button></div>
-          <div className="hero-mini"><span className="small-icon"><ShieldCheck size={18}/></span><span>Terintegrasi · Transparan · Kolaboratif</span></div>
+      <section className="hero" aria-label="Profil Kampus Rembang">
+        <div className="hero-photo" aria-hidden="true"/>
+        <div className="public-container hero-grid">
+          <div className="hero-content" key={heroSlide}>
+            <span className="hero-rule"/>
+            <div className="hero-subtitle">{currentHero.pretitle}</div>
+            <h1>{currentHero.title}</h1>
+            <p>{currentHero.description}</p>
+            <div className="hero-values">
+              <span><GraduationCap size={26}/> Pendidikan<br/>Berkualitas</span>
+              <span><Handshake size={26}/> Kemitraan<br/>Berdampak</span>
+              <span><Leaf size={26}/> Kampus<br/>Berkelanjutan</span>
+            </div>
+            <div className="hero-cta"><IconButton kind="gold" icon={ArrowRight} onClick={()=>navigate('/tentang')}>Profil Kampus</IconButton><button className="hero-link" onClick={()=>navigate('/layanan')}>Layanan Kampus <ArrowRight size={18}/></button></div>
+          </div>
         </div>
-        <div className="hero-art" aria-hidden="true"><div className="art-orbit orbit-one"/><div className="art-orbit orbit-two"/><div className="art-sun"/><div className="art-card art-card-top"><span className="art-icon"><Globe2 size={19}/></span><span><b>Rembang Campus</b><small>Connected for impact</small></span></div><div className="art-building"><div className="building-top"/><div className="building-upper"><i/><i/><i/><i/></div><div className="building-lower"><i/><i/><i/><i/><i/></div><div className="building-base"/></div><div className="art-card art-card-bottom"><div className="art-check"><Check size={17}/></div><span><b>Satu Platform</b><small>Beragam layanan kampus</small></span></div><div className="art-label">BUILDING WHAT'S NEXT <ArrowUpRight size={15}/></div></div>
-      </div><div className="hero-index">01 <span/> CAMPUS TRANSFORMATION</div></section>
+        <div className="hero-pagination" aria-label="Pilih slide utama">{heroSlides.map((slide,i)=><button key={slide.eyebrow} type="button" aria-label={'Tampilkan slide '+(i+1)} aria-pressed={heroSlide===i} className={heroSlide===i?'active':''} onClick={()=>setHeroSlide(i)}/>)}</div>
+        <svg className="hero-wave" viewBox="0 0 1440 100" preserveAspectRatio="none" aria-hidden="true"><path d="M0 40 C180 2 325 72 520 78 S900 95 1110 74 S1300 45 1440 8 L1440 100 L0 100 Z" fill="#07366B" stroke="#FFCA27" strokeWidth="8"/></svg>
+      </section>
       <section className="trust-strip"><div className="public-container trust-inner"><div><span className="trust-small">DIPONEGORO UNIVERSITY</span><b>Kampus Rembang</b></div><span className="trust-divider"/><div><span className="trust-small">PILAR LAYANAN</span><b>Akademik · Fasilitas · Kemitraan</b></div><span className="trust-divider"/><div><span className="trust-small">PRINSIP KERJA</span><b>Efektif dan Akuntabel</b></div></div></section>
       <section className="public-section public-container"><div className="section-heading"><div><div className="section-kicker">WHAT WE DO <span>✦</span></div><h2>Solusi terpadu untuk<br/><i>kemajuan bersama.</i></h2></div><p>Dari pengelolaan internal hingga kolaborasi eksternal, layanan kampus lebih mudah dijangkau dan dipantau.</p></div>
       <div className="service-grid">
@@ -296,19 +320,22 @@ function App() {
       <section className="cta-band"><div className="public-container cta-grid"><span className="cta-big-icon"><Handshake size={49}/></span><div><span>LET'S WORK TOGETHER</span><h2>Bangun dampak bersama<br/>Kampus Rembang.</h2></div><IconButton kind="dark" icon={ArrowUpRight} onClick={()=>navigate('/kontak')}>Hubungi Kami</IconButton></div></section>
     </main><Footer/></>;
   }
+  function PageBanner({kicker,title,accent,description}) {
+    return <section className="page-banner"><div className="public-container page-banner-inner"><span className="hero-rule"/><span className="page-banner-kicker">{kicker}</span><h1>{title} <em>{accent}</em></h1><p>{description}</p></div><svg className="page-banner-wave" viewBox="0 0 1440 66" preserveAspectRatio="none" aria-hidden="true"><path d="M0 42 C270 4 480 80 730 48 S1100 20 1440 36 L1440 66 L0 66 Z" fill="#f7f9fd" stroke="#ffca27" strokeWidth="5"/></svg></section>;
+  }
   function NewsPage() {
     const filtered=posts.filter(p=>p.title.toLowerCase().includes(search.toLowerCase())||p.category.toLowerCase().includes(search.toLowerCase()));
-    return <><main className="page-main public-container"><div className="page-kicker">PUBLIKASI & INFORMASI</div><div className="page-head"><h1>Berita <i>& cerita.</i></h1><p>Ruang berbagi perkembangan, capaian, dan kegiatan Kampus Rembang.</p></div><div className="news-tools"><div className="searchbox"><Search size={19}/><input placeholder="Cari berita atau kategori..." value={search} onChange={e=>setSearch(e.target.value)}/></div><Tag>{filtered.length} Artikel</Tag></div>{filtered.length?<div className="stories-grid">{filtered.map(p=><StoryCard key={p.id} post={p}/>)}</div>:<Empty title="Belum ada berita" subtitle="Coba kata kunci lain atau kunjungi kembali nanti."/>}</main><Footer/></>;
+    return <><PageBanner kicker="PUBLIKASI & INFORMASI" title="Berita" accent="& Cerita" description="Ruang berbagi perkembangan, capaian, dan kegiatan Kampus Rembang Universitas Diponegoro."/><main className="page-main public-container"><div className="news-tools"><div className="searchbox"><Search size={19}/><input placeholder="Cari berita atau kategori..." value={search} onChange={e=>setSearch(e.target.value)}/></div><Tag>{filtered.length} Artikel</Tag></div>{filtered.length?<div className="stories-grid">{filtered.map(p=><StoryCard key={p.id} post={p}/>)}</div>:<Empty title="Belum ada berita" subtitle="Coba kata kunci lain atau kunjungi kembali nanti."/>}</main><Footer/></>;
   }
   function InfoPage({kind}) {
     const isAbout=kind==='tentang',isContact=kind==='kontak';
-    return <><main className="page-main public-container"><div className="page-kicker">BPKR · KAMPUS REMBANG</div><div className="page-head"><h1>{isAbout?'Tentang ':isContact?'Hubungi ':'Layanan '}<i>{isAbout?'kami.':isContact?'BPKR.':'terpadu.'}</i></h1><p>{isAbout?'Mendukung tata kelola, layanan dan pengembangan Kampus Rembang Universitas Diponegoro.':isContact?'Terhubung dan berkolaborasi bersama Badan Pengelola Kampus Rembang.':'Akses berbagai layanan administrasi, akademik, serta operasional melalui portal yang terintegrasi.'}</p></div>
-      {isContact?<div className="contact-cards"><div className="info-card"><MapPin/><h3>Alamat</h3><p>{site.contact_address||'Kampus Rembang, Universitas Diponegoro'}</p></div>{site.contact_email&&<div className="info-card"><Mail/><h3>Email</h3><p>{site.contact_email}</p></div>}{site.contact_phone&&<div className="info-card"><Phone/><h3>Telepon</h3><p>{site.contact_phone}</p></div>}</div>:isAbout?<div className="about-layout"><div className="about-visual"><span>BPKR</span><small>UNITED IN PURPOSE</small></div><div className="about-text"><div className="section-kicker">OUR COMMITMENT</div><h2>{site.tagline}</h2><p>BPKR menyediakan ruang koordinasi pengelolaan Kampus Rembang, meliputi komunikasi layanan, fasilitas, administrasi, kolaborasi, serta dokumentasi kegiatan.</p><p>Portal ini memisahkan informasi publik dan akses operasional internal, dengan pembagian kewenangan sesuai role pengguna.</p></div></div>:<div className="contact-cards">{[['Akademik',BookOpen,'Koordinasi pembelajaran dan layanan akademik'],['Sarana & Prasarana',Building2,'Penggunaan ruang, fasilitas, dan kebutuhan kampus'],['Laboratorium',Microscope,'Pendataan laboratorium dan aktivitas pendukung'],['Administrasi',ClipboardList,'Surat, dokumen, rapat, serta tindak lanjut'],['Keuangan',Wallet,'Pengelolaan administrasi anggaran sesuai akses'],['Kerja Sama',Handshake,'Koordinasi mitra dan kegiatan kemitraan']].map(([name,I,desc])=><div className="info-card" key={name}><I/><h3>{name}</h3><p>{desc}</p></div>)}</div>}
+    return <><PageBanner kicker="BPKR · KAMPUS REMBANG" title={isAbout?'Tentang':isContact?'Hubungi':'Layanan'} accent={isAbout?'Kami':isContact?'BPKR':'Terpadu'} description={isAbout?'Mendukung tata kelola, layanan, dan pengembangan Kampus Rembang Universitas Diponegoro.':isContact?'Terhubung dan berkolaborasi bersama Badan Pengelola Kampus Rembang.':'Akses berbagai layanan administrasi, akademik, serta operasional melalui portal yang terintegrasi.'}/><main className="page-main public-container">
+      {isContact?<div className="contact-cards"><div className="info-card"><MapPin/><h3>Alamat</h3><p>{site.contact_address||'Kampus Rembang, Universitas Diponegoro'}</p></div>{site.contact_email&&<div className="info-card"><Mail/><h3>Email</h3><p>{site.contact_email}</p></div>}{site.contact_phone&&<div className="info-card"><Phone/><h3>Telepon</h3><p>{site.contact_phone}</p></div>}</div>:isAbout?<div className="about-layout"><div className="about-visual"><span>Kampus<br/>Rembang</span><small>UNIVERSITAS DIPONEGORO</small></div><div className="about-text"><div className="section-kicker">OUR COMMITMENT</div><h2>{site.tagline}</h2><p>BPKR menyediakan ruang koordinasi pengelolaan Kampus Rembang, meliputi komunikasi layanan, fasilitas, administrasi, kolaborasi, serta dokumentasi kegiatan.</p><p>Portal ini memisahkan informasi publik dan akses operasional internal, dengan pembagian kewenangan sesuai role pengguna.</p></div></div>:<div className="contact-cards">{[['Akademik',BookOpen,'Koordinasi pembelajaran dan layanan akademik'],['Sarana & Prasarana',Building2,'Penggunaan ruang, fasilitas, dan kebutuhan kampus'],['Laboratorium',Microscope,'Pendataan laboratorium dan aktivitas pendukung'],['Administrasi',ClipboardList,'Surat, dokumen, rapat, serta tindak lanjut'],['Keuangan',Wallet,'Pengelolaan administrasi anggaran sesuai akses'],['Kerja Sama',Handshake,'Koordinasi mitra dan kegiatan kemitraan']].map(([name,I,desc])=><div className="info-card" key={name}><I/><h3>{name}</h3><p>{desc}</p></div>)}</div>}
       <div className="info-action"><p>Sudah memiliki akun BPKR?</p><IconButton icon={LogIn} kind="primary" onClick={()=>navigate('/login')}>Masuk ke Dashboard</IconButton></div>
     </main><Footer/></>;
   }
   function LoginPage() {
-    return <main className="auth-page"><div className="auth-aside"><span className="auth-aside-mark">B.</span><div className="auth-aside-content"><span>ONE CONNECTED CAMPUS</span><h2>Kelola lebih cerdas.<br/>Bergerak lebih cepat.</h2><p>Portal operasional terpadu untuk seluruh unsur Badan Pengelola Kampus Rembang.</p></div><div className="auth-aside-foot">Universitas Diponegoro · Kampus Rembang</div></div><div className="auth-form-wrap"><button className="back-link" onClick={()=>navigate('/')}><ArrowRight size={15}/> Kembali ke website</button><div className="auth-form"><div className="auth-icon"><LockKeyhole size={25}/></div><span className="section-kicker">SECURE WORKSPACE</span><h1>Selamat datang <i>kembali.</i></h1><p>Masuk menggunakan akun sesuai peran Anda di BPKR.</p><form onSubmit={loginSubmit}><Input label="Username" required autoComplete="username" value={login.username} onChange={v=>setLogin(p=>({...p,username:v}))} placeholder="Contoh: sekretaris"/><Input label="Kata sandi" required type="password" autoComplete="current-password" value={login.password} onChange={v=>setLogin(p=>({...p,password:v}))} placeholder="Masukkan kata sandi"/><button className="btn btn-primary login-submit" disabled={busy} type="submit">Masuk ke Dashboard <ArrowRight size={18}/></button></form><p className="auth-note"><ShieldCheck size={16}/> Akses diawasi dan disesuaikan dengan role pengguna.</p></div></div></main>;
+    return <main className="auth-page"><div className="auth-aside"><img className="auth-aside-logo" src="/images/undip-logo.png" alt="Lambang Universitas Diponegoro"/><div className="auth-aside-content"><span>UNIVERSITAS DIPONEGORO</span><h2>Kampus Rembang.<br/>Melayani & Berdampak.</h2><p>Portal operasional terpadu untuk seluruh unsur Badan Pengelola Kampus Rembang.</p></div><div className="auth-aside-foot">BPKR · Universitas Diponegoro · Kampus Rembang</div></div><div className="auth-form-wrap"><button className="back-link" onClick={()=>navigate('/')}><ArrowRight size={15}/> Kembali ke website</button><div className="auth-form"><div className="auth-icon"><LockKeyhole size={25}/></div><span className="section-kicker">SECURE WORKSPACE</span><h1>Selamat datang <i>kembali.</i></h1><p>Masuk menggunakan akun sesuai peran Anda di BPKR.</p><form onSubmit={loginSubmit}><Input label="Username" required autoComplete="username" value={login.username} onChange={v=>setLogin(p=>({...p,username:v}))} placeholder="Contoh: sekretaris"/><Input label="Kata sandi" required type="password" autoComplete="current-password" value={login.password} onChange={v=>setLogin(p=>({...p,password:v}))} placeholder="Masukkan kata sandi"/><button className="btn btn-primary login-submit" disabled={busy} type="submit">Masuk ke Dashboard <ArrowRight size={18}/></button></form><p className="auth-note"><ShieldCheck size={16}/> Akses diawasi dan disesuaikan dengan role pengguna.</p></div></div></main>;
   }
   function DashboardOverview() {
     const stats=[['Artikel Terbit',dashboard?.news??0,Newspaper],['Rapat Tercatat',dashboard?.meetings??0,CalendarDays],['Dokumen Surat',dashboard?.letters??0,FileText],['Modul Tersedia',modules.length,LayoutDashboard]];
@@ -370,7 +397,7 @@ function App() {
       ...(user?.role==='mahasiswa'?[]:[['meetings','Rapat & Tindak Lanjut',CalendarDays]]), ...(canLetters?[['letters','Surat & Dokumen',FileText]]:[]),
       ...(isEditor?[['cms','Berita & Halaman',Newspaper]]:[]),
       ...(isAdmin?[['site','Pengaturan Website',Settings],['users','Pengguna & Role',Users],['audit','Audit Aktivitas',ShieldCheck]]:[]),['account','Akun & Keamanan',LockKeyhole]];
-    return <div className="dash-layout"><aside className="dash-sidebar"><div className="dash-logo"><div className="dash-logo-mark">B.</div><div><b>BPKR PORTAL</b><small>UNDIP Rembang Campus</small></div></div><div className="sidebar-label">WORKSPACE</div><nav>{nav.map(([key,title,I])=><button key={key} className={section===key?'selected':''} onClick={()=>{setSection(key);setError('');setToast('')}}><I size={19}/><span>{title}</span>{section===key&&<span className="selected-dot"/>}</button>)}</nav><div className="sidebar-bottom"><button onClick={()=>navigate('/')}><Globe2 size={18}/> Lihat Website</button><button onClick={logout}><LogOut size={18}/> Keluar</button></div></aside>
+    return <div className="dash-layout"><aside className="dash-sidebar"><div className="dash-logo"><img className="dash-logo-mark" src="/images/undip-logo.png" alt="Logo UNDIP"/><div><b>BPKR PORTAL</b><small>UNDIP · Kampus Rembang</small></div></div><div className="sidebar-label">WORKSPACE</div><nav>{nav.map(([key,title,I])=><button key={key} className={section===key?'selected':''} onClick={()=>{setSection(key);setError('');setToast('')}}><I size={19}/><span>{title}</span>{section===key&&<span className="selected-dot"/>}</button>)}</nav><div className="sidebar-bottom"><button onClick={()=>navigate('/')}><Globe2 size={18}/> Lihat Website</button><button onClick={logout}><LogOut size={18}/> Keluar</button></div></aside>
       <div className="dash-workspace"><div className="dash-topbar"><div className="dash-breadcrumb">BPKR / <strong>{section==='overview'?'Dashboard':moduleLabels[section]||nav.find(n=>n[0]===section)?.[1]}</strong></div><div className="top-user"><span className="user-avatar">{user?.full_name?.charAt(0)?.toUpperCase()||'B'}</span><span><strong>{user?.full_name}</strong><small>{roleLabels[user?.role]}</small></span><ChevronDown size={16}/></div></div>
       <div className="dash-main">
       {user?.must_change_password&&<div className="password-reminder" role="status"><div className="password-reminder-icon"><LockKeyhole size={21}/></div><div><strong>Kata sandi awal belum diganti</strong><p>Semua tampilan sesuai role tetap dapat dibuka. Ganti kata sandi untuk mengaktifkan fitur penyimpanan dan perubahan data.</p></div><button type="button" onClick={()=>setSection('account')}>Ganti sekarang <ArrowRight size={16}/></button></div>}

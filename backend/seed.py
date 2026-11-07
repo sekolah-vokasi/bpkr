@@ -6,13 +6,13 @@ ROLES = ["pimpinan", "sekretaris", "keuangan", "kerjasama", "dosen", "laboran", 
 DEFAULT_SETTINGS = {
     "site_name": "BPKR | Kampus Rembang UNDIP",
     "tagline": "Bersama Membangun Kampus Rembang yang Unggul dan Berdampak",
-    "hero_title": "Ruang Kolaborasi, Inovasi, dan Kemajuan Kampus Rembang.",
-    "hero_description": "Informasi, layanan akademik, pengelolaan fasilitas, dan kolaborasi terintegrasi dalam satu platform Badan Pengelola Kampus Rembang.",
+    "hero_title": "Kampus Rembang",
+    "hero_description": "Kampus pengembangan UNDIP di pesisir utara Jawa yang mencetak talenta unggul, adaptif, dan berdampak bagi masyarakat.",
     "contact_email": "",
     "contact_phone": "",
     "contact_address": "Kampus Rembang, Universitas Diponegoro",
     "footer_text": "BPKR · Universitas Diponegoro · Kampus Rembang",
-    "menus": '[{"title":"Beranda","url":"/"},{"title":"Berita","url":"/berita"},{"title":"Tentang","url":"/tentang"},{"title":"Layanan","url":"/layanan"},{"title":"Kontak","url":"/kontak"}]'
+    "menus": '[{"title":"Beranda","url":"/"},{"title":"Tentang Kami","url":"/tentang"},{"title":"Layanan","url":"/layanan"},{"title":"Berita","url":"/berita"},{"title":"Kontak","url":"/kontak"}]'
 }
 
 DEFAULT_POSTS = [
