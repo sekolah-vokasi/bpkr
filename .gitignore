@@ -1,0 +1,22 @@
+# credentials, local runtime, media, caches, build outputs
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+node_modules/
+frontend/dist/
+uploads/
+*.log
+logs/
+.cache/
+.npm-cache/
+.pip-cache/
+.DS_Store
+.idea/
+.vscode/
+coverage/
+playwright-report/
+test-results/
